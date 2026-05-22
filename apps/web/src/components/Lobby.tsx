@@ -1,0 +1,206 @@
+'use client'
+
+import { useState } from 'react'
+import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
+
+const GAMES: {
+  type: GameType; label: string; desc: string; icon: string; min: number; max: number
+}[] = [
+  { type: 'president', label: 'President',  icon: '👑', desc: 'Get rid of all cards first',       min: 3, max: 8 },
+  { type: 'bluff',     label: 'Bluff',      icon: '🎭', desc: 'Lie freely, get caught, take pile', min: 3, max: 8 },
+  { type: 'poker',     label: 'Poker',      icon: '♠',  desc: "Texas Hold'em",                    min: 2, max: 9 },
+  { type: 'blackjack', label: 'Blackjack',  icon: '21', desc: 'Beat the dealer to 21',             min: 2, max: 7 },
+  { type: 'euchre',    label: 'Euchre',     icon: '🤝', desc: '2v2 trick-taking',                  min: 4, max: 4 },
+  { type: 'cambio',    label: 'Cambio',     icon: '🔄', desc: 'Lowest total wins — swap & peek',   min: 2, max: 6 },
+]
+
+interface Props {
+  gameState: GameState
+  myPlayerId: string
+  send: (event: ClientEvent) => void
+}
+
+export function Lobby({ gameState, myPlayerId, send }: Props) {
+  const me = gameState.players.find(p => p.id === myPlayerId)
+  const isHost = me?.isHost ?? false
+  const playerCount = gameState.players.length
+  const selectedGame = gameState.gameType
+  const selectedConfig = GAMES.find(g => g.type === selectedGame)
+  const canDeal = selectedGame !== null
+    && playerCount >= (selectedConfig?.min ?? 2)
+    && playerCount <= (selectedConfig?.max ?? 99)
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto" style={{ background: 'var(--bg)' }}>
+
+      {/* Room code hero */}
+      <div className="flex flex-col items-center pt-10 pb-6 px-4">
+        <p className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-3"
+          style={{ color: 'var(--text-dim)' }}>
+          Room Code
+        </p>
+        <div className="rounded-2xl px-8 py-4"
+          style={{ background: 'var(--surface-mid)', border: '1px solid var(--border-hi)' }}>
+          <span className="font-mono font-bold text-4xl tracking-[0.35em]"
+            style={{ color: 'var(--text)', letterSpacing: '0.35em' }}>
+            {gameState.roomCode}
+          </span>
+        </div>
+        <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
+          Share this code — everyone joins from the home screen
+        </p>
+      </div>
+
+      {/* Players */}
+      <Section label={`Players (${playerCount})`}>
+        <div className="flex flex-col gap-1.5">
+          {gameState.players.map(player => (
+            <div key={player.id}
+              className="flex items-center justify-between rounded-xl px-3 py-2.5"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                  style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)' }}>
+                  {player.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{player.name}</span>
+                  {player.isHost && (
+                    <span className="ml-2 text-[10px] font-bold uppercase tracking-wide"
+                      style={{ color: 'var(--accent)' }}>Host</span>
+                  )}
+                </div>
+              </div>
+              <div>
+                {!player.isConnected && (
+                  <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>offline</span>
+                )}
+                {player.isReady && !player.isHost && (
+                  <span className="text-green-400 text-sm font-bold">✓</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* Game selector — host only */}
+      {isHost && (
+        <Section label="Choose Game">
+          <div className="grid grid-cols-2 gap-2">
+            {GAMES.map(game => {
+              const tooFew  = playerCount < game.min
+              const tooMany = playerCount > game.max
+              const disabled = tooFew || tooMany
+              const active = selectedGame === game.type
+
+              return (
+                <button
+                  key={game.type}
+                  disabled={disabled}
+                  onClick={() => send({ type: 'set_game', gameType: game.type })}
+                  className="flex flex-col items-start text-left rounded-xl p-3 transition-all active:scale-95"
+                  style={{
+                    background: active ? 'var(--accent-dim)' : 'var(--surface)',
+                    border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                    opacity: disabled ? 0.38 : 1,
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <span className="text-xl mb-1.5">{game.icon}</span>
+                  <span className="font-bold text-sm" style={{ color: active ? 'var(--accent)' : 'var(--text)' }}>
+                    {game.label}
+                  </span>
+                  <span className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{game.desc}</span>
+                  <span className="text-[10px] mt-1" style={{ color: 'var(--text-dim)' }}>
+                    {disabled
+                      ? (tooFew ? `Need ${game.min}+ players` : `Max ${game.max}`)
+                      : `${game.min}–${game.max} players`}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </Section>
+      )}
+
+      {/* Euchre seat assignment */}
+      {isHost && selectedGame === 'euchre' && playerCount === 4 && (
+        <Section label="Team Seats">
+          <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+            <div className="grid grid-cols-2">
+              {[
+                { label: 'Team A', color: 'var(--accent)', indices: [0, 2] },
+                { label: 'Team B', color: '#60a5fa',       indices: [1, 3] },
+              ].map(team => (
+                <div key={team.label} className="p-3" style={{ background: 'var(--surface)' }}>
+                  <p className="text-xs font-bold mb-1.5" style={{ color: team.color }}>{team.label}</p>
+                  {gameState.players
+                    .filter(p => team.indices.includes(p.seatIndex))
+                    .map(p => (
+                      <p key={p.id} className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.name}</p>
+                    ))}
+                </div>
+              ))}
+            </div>
+            <div className="px-3 pb-3 pt-2 flex flex-wrap gap-1.5" style={{ background: 'var(--surface)' }}>
+              <p className="text-[10px] w-full" style={{ color: 'var(--text-dim)' }}>Tap to rotate seat:</p>
+              {gameState.players.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => send({ type: 'assign_seat', playerId: p.id, seatIndex: (p.seatIndex + 1) % 4 })}
+                  className="text-xs px-2 py-1 rounded-lg transition-all active:scale-95"
+                  style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                  {p.name} #{p.seatIndex}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {/* Action */}
+      <div className="px-4 pb-10 pt-2">
+        {isHost ? (
+          <button
+            disabled={!canDeal}
+            onClick={() => send({ type: 'start_deal' })}
+            className="w-full py-4 rounded-2xl font-bold text-base transition-all active:scale-95"
+            style={{
+              background: canDeal ? 'var(--accent)' : 'var(--surface-mid)',
+              color: canDeal ? '#000' : 'var(--text-dim)',
+              border: '1px solid ' + (canDeal ? 'var(--accent)' : 'var(--border)'),
+              cursor: canDeal ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {canDeal ? 'Deal Cards' : selectedGame ? `Need ${selectedConfig?.min}+ players` : 'Select a game above'}
+          </button>
+        ) : (
+          <button
+            onClick={() => send({ type: 'ready' })}
+            className="w-full py-4 rounded-2xl font-bold text-base transition-all active:scale-95"
+            style={{
+              background: me?.isReady ? 'rgba(74,222,128,0.15)' : 'var(--surface-mid)',
+              color: me?.isReady ? '#4ade80' : 'var(--text)',
+              border: '1px solid ' + (me?.isReady ? 'rgba(74,222,128,0.35)' : 'var(--border-hi)'),
+            }}
+          >
+            {me?.isReady ? '✓ Ready' : 'Mark Ready'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="px-4 mb-4">
+      <p className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-2"
+        style={{ color: 'var(--text-dim)' }}>
+        {label}
+      </p>
+      {children}
+    </div>
+  )
+}

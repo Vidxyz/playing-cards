@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+.next/
+dist/
+.wrangler/
+out/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.dev.vars
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Turbo
+.turbo/
+
+# OS
+.DS_Store
+.idea/
+*.iml
+
+# TypeScript
+*.tsbuildinfo
+.vercel
+.env*.local

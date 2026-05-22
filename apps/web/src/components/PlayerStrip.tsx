@@ -1,0 +1,82 @@
+'use client'
+
+import type { GameState } from '@playing-cards/shared'
+
+interface Props {
+  gameState: GameState
+  myPlayerId: string
+}
+
+export function PlayerStrip({ gameState, myPlayerId }: Props) {
+  const others = gameState.players.filter(p => p.id !== myPlayerId)
+  if (others.length === 0) return null
+
+  const { turnOrder, currentTurnPlayerId } = gameState
+  const currentIdx = turnOrder.indexOf(currentTurnPlayerId ?? '')
+  const nextPlayerId = turnOrder.length > 1
+    ? turnOrder[(currentIdx + 1) % turnOrder.length]
+    : null
+
+  return (
+    <div className="flex gap-2 overflow-x-auto no-scrollbar px-3 py-1.5">
+      {others.map(player => {
+        const isCurrentTurn = currentTurnPlayerId === player.id
+        const isNextTurn = nextPlayerId === player.id && !isCurrentTurn
+        const cardCount = gameState.zones
+          .filter(z => z.ownerId === player.id)
+          .reduce((s, z) => s + z.cards.length, 0)
+
+        return (
+          <div
+            key={player.id}
+            className="flex items-center gap-2 flex-shrink-0 rounded-2xl px-3 py-2 transition-all"
+            style={{
+              background: isCurrentTurn ? 'var(--surface-hi)' : 'var(--surface)',
+              border: '1px solid ' + (isCurrentTurn ? 'var(--accent)' : isNextTurn ? 'var(--border-hi)' : 'var(--border)'),
+              opacity: !player.isConnected || player.isFolded ? 0.4 : 1,
+            }}
+          >
+            <div
+              className="flex items-center justify-center rounded-full text-xs font-bold flex-shrink-0"
+              style={{
+                width: 28, height: 28,
+                background: isCurrentTurn ? 'var(--accent-dim)' : 'var(--surface-mid)',
+                color: isCurrentTurn ? 'var(--accent)' : 'var(--text-muted)',
+                border: '1px solid ' + (isCurrentTurn ? 'rgba(245,158,11,0.3)' : 'var(--border)'),
+              }}
+            >
+              {player.name.slice(0, 2).toUpperCase()}
+            </div>
+
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold truncate max-w-[72px]" style={{ color: 'var(--text)' }}>
+                  {player.name}
+                </span>
+                {player.isHost && (
+                  <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>
+                    HOST
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                {player.isFolded ? 'folded' : `${cardCount} card${cardCount !== 1 ? 's' : ''}`}
+                {gameState.gameType === 'euchre' && player.trickCount > 0 && ` · ${player.trickCount}T`}
+              </span>
+            </div>
+
+            {isCurrentTurn && (
+              <span className="text-xs" style={{ color: 'var(--accent)' }}>▶</span>
+            )}
+            {isNextTurn && (
+              <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                next
+              </span>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
