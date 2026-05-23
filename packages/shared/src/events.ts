@@ -20,6 +20,16 @@ export type ClientEvent =
   | { type: 'peek_card'; cardId: string; zoneId: string }
   | { type: 'update_score'; targetId: string; delta: number; targetType: 'player' | 'team' }
   | { type: 'assign_seat'; playerId: string; seatIndex: number }
+  | { type: 'set_dealer'; playerId: string }
+  // Cambio-specific
+  | { type: 'cambio_call' }
+  | { type: 'cambio_swap'; targetZoneId: string }
+  | { type: 'cambio_discard_drawn'; usePower?: boolean }
+  | { type: 'cambio_power_peek'; cardId: string; zoneId: string }
+  | { type: 'cambio_power_swap'; zoneId1: string; zoneId2?: string }
+  | { type: 'cambio_power_skip' }
+  | { type: 'cambio_stick'; zoneId: string }
+  | { type: 'set_cambio_jokers'; count: number }
 
 // Server → Client
 export type ServerEvent =
@@ -27,4 +37,4 @@ export type ServerEvent =
   | { type: 'action'; action: GameAction }
   | { type: 'error'; message: string }
   | { type: 'kicked'; reason: string }
-  | { type: 'peek_result'; cardId: string; zoneId: string; rank: string; suit: string }
+  | { type: 'peek_result'; cardId: string; zoneId: string; rank: string; suit: string; duration?: number; fromInitialDeal?: boolean }

@@ -1,5 +1,5 @@
 export type Suit = 'spades' | 'hearts' | 'diamonds' | 'clubs'
-export type Rank = '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'A'
+export type Rank = '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'A' | 'JKR'
 
 export interface Card {
   id: string   // e.g. "AS", "10H", "JD", "2C"
@@ -74,10 +74,19 @@ export interface GameState {
   bluffReveal: BluffReveal | null
   lastBluffBatch: { cardIds: string[]; submitterId: string } | null
   bluffPassCount: number
+  // Blackjack-specific
+  blackjackDealerId: string | null
+  // Cambio-specific
+  cambioDrawn: { card: Card; fromDiscard: boolean } | null
+  cambioPower: 'peek-own' | 'peek-opponent' | 'blind-swap' | 'peek-swap' | 'peek-swap-ready' | null
+  cambioCaller: string | null
+  cambioFinalRound: boolean
+  cambioPeekSwapTarget: { cardId: string; zoneId: string } | null
+  cambioJokers: number
 }
 
 export interface GameAction {
-  type: 'deal' | 'play' | 'draw' | 'flip' | 'bluff_reveal' | 'bluff_peek' | 'pass' | 'fold' | 'move'
+  type: 'deal' | 'play' | 'draw' | 'flip' | 'bluff_reveal' | 'bluff_peek' | 'pass' | 'fold' | 'move' | 'stick_success' | 'stick_fail'
   playerId: string
   cardIds?: string[]
   fromZoneId?: string
@@ -101,6 +110,7 @@ export interface DeckFilter {
   ranks?: Rank[]
   suits?: Suit[]
   copies?: number
+  jokerCount?: number
 }
 
 export interface GameConfig {

@@ -66,6 +66,7 @@ export function dealCards(
   zones: Zone[],
   config: GameConfig,
   players: Player[],
+  dealerPlayerId?: string | null,
 ): { zones: Zone[]; remaining: Card[] } {
   const updatedZones = zones.map(z => ({ ...z, cards: [...z.cards] }))
   let pile = [...deck]
@@ -108,8 +109,9 @@ export function dealCards(
   }
 
   if (config.gameType === 'blackjack') {
-    // Deal 2 to each player hand, 1 face-down + 1 face-up to dealer
+    // Deal 2 to each player hand (skip the designated dealer — their cards go to dealer-hand)
     for (const player of players) {
+      if (player.id === dealerPlayerId) continue
       const handZone = updatedZones.find(z => z.id === `hand-${player.id}`)
       if (handZone) {
         for (let i = 0; i < 2 && pile.length > 0; i++) {

@@ -78,6 +78,17 @@ export function Card({ card, faceDown, selected, size = 'md', animate, onClick, 
     )
   }
 
+  if (card.rank === 'JKR') {
+    return (
+      <div onClick={onClick} className={`${animClass} ${className}`}
+        style={{ ...cardStyle, background: 'var(--card-white)', color: '#7c3aed' }}>
+        <div style={{ position: 'absolute', top: 4, left: 5, fontSize: s.corner, fontWeight: 900, lineHeight: 1 }}>J</div>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s.suit }}>★</div>
+        <div style={{ position: 'absolute', bottom: 4, right: 5, fontSize: s.corner, fontWeight: 900, lineHeight: 1, transform: 'rotate(180deg)' }}>J</div>
+      </div>
+    )
+  }
+
   const rank = card.rank
   const suit = SUIT_SYMBOL[card.suit] || card.suit
   const color = isRed ? 'var(--card-red)' : 'var(--card-black)'

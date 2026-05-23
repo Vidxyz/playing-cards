@@ -6,7 +6,7 @@ import { RoomSocket } from '@/lib/ws'
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 
-interface PeekResult {
+export interface PeekResult {
   cardId: string
   zoneId: string
   rank: string
@@ -17,7 +17,9 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [lastAction, setLastAction] = useState<GameAction | null>(null)
-  const [peekResult, setPeekResult] = useState<PeekResult | null>(null)
+  const [peekResults, setPeekResults] = useState<PeekResult[]>([])
+  // Initial-deal peeks for Cambio: held until the player taps "ready", then shown for 3s client-side
+  const [initialPeeks, setInitialPeeks] = useState<PeekResult[]>([])
   const socketRef = useRef<RoomSocket | null>(null)
   const joinedRef = useRef(false)
 
@@ -30,18 +32,31 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
     } else if (event.type === 'action') {
       setLastAction(event.action)
     } else if (event.type === 'peek_result') {
-      setPeekResult(event)
-      // Auto-clear peek after 5 seconds
-      setTimeout(() => setPeekResult(null), 5000)
+      const entry: PeekResult = { cardId: event.cardId, zoneId: event.zoneId, rank: event.rank, suit: event.suit }
+      if (event.fromInitialDeal) {
+        // Hold without a timer — CambioBoard manages the 3s countdown on user interaction
+        setInitialPeeks(prev => [
+          ...prev.filter(p => p.zoneId !== entry.zoneId),
+          entry,
+        ])
+      } else {
+        setPeekResults(prev => [
+          ...prev.filter(p => !(p.cardId === entry.cardId && p.zoneId === entry.zoneId)),
+          entry,
+        ])
+        const duration = event.duration ?? 5000
+        setTimeout(() => {
+          setPeekResults(prev => prev.filter(p => !(p.cardId === entry.cardId && p.zoneId === entry.zoneId)))
+        }, duration)
+      }
     } else if (event.type === 'kicked') {
-      window.location.href = '/?kicked=1'
+      window.location.href = '/'
     }
   }, [])
 
   const handleStatus = useCallback((s: ConnectionStatus) => {
     setStatus(s)
     if (s === 'disconnected') {
-      // Reset so join event re-fires on reconnect
       joinedRef.current = false
     }
     if (s === 'connected' && !joinedRef.current) {
@@ -66,5 +81,7 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
     socketRef.current?.send(event)
   }, [])
 
-  return { gameState, status, lastAction, peekResult, send }
+  const clearInitialPeeks = useCallback(() => setInitialPeeks([]), [])
+
+  return { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send }
 }

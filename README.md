@@ -262,6 +262,141 @@ playing-cards/
 
 ---
 
+## Supported Games
+
+---
+
+### President
+
+**Players:** 3–8 · **Cards:** Standard 52-card deck, dealt evenly · **Objective:** Get rid of all your cards first
+
+**How it plays:**
+- All cards are dealt to players. Whoever holds the 3♣ (or lowest club) goes first — this is automatically the starting player.
+- On your turn, play a single card or a set of equal-ranked cards face-up to the play pile, beating the previous play (higher rank, same count).
+- After you play, pass turn to the next player. Anyone who can't beat (or doesn't want to) passes.
+- When everyone passes consecutively, the pile is cleared and whoever last played starts fresh — they can play anything.
+- The first player to empty their hand wins that round. Players finish in order (2nd, 3rd, …). The last player is the Scum.
+- **Scoring:** 1 point to the winner each round. Play as many rounds as you like, track total via Scores.
+
+**App specifics:**
+- Hand zones have `owner-only` visibility — only you see your own cards.
+- "Pass" button in the top bar is how you pass your turn.
+- "Next Round" (host only) re-deals after everyone has agreed the round is over.
+
+---
+
+### Blackjack
+
+**Players:** 2–7 (one is the dealer, typically the host) · **Cards:** Standard 52-card deck · **Objective:** Get closer to 21 than the dealer without busting
+
+**How it plays:**
+- Each player is dealt 2 cards face-up. The dealer gets 1 face-down and 1 face-up.
+- Players take turns (hit = draw a card, stand = pass). Bust over 21 and you're out.
+- After all players finish, the dealer reveals their face-down card (host taps **Reveal**), then draws until reaching 17 or higher (host taps **Hit dealer**).
+- Players who are closer to 21 than the dealer (without busting) win. Ties push.
+- **Ace** = 11 or 1 (auto-adjusted to avoid bust). **J/Q/K** = 10.
+
+**App specifics:**
+- Player hand zones have `face-up` visibility — all players' cards are visible to everyone on the table.
+- The dealer's first card uses a `__facedown` id suffix; the Card component renders it face-down automatically.
+- The host controls the dealer: **Reveal** flips the hidden card; **Hit dealer** draws a card from the shoe to the dealer's hand.
+- Hand totals are shown live below each player's name. A **?** indicates a hidden dealer card is still in play.
+- The draw pile is labelled "shoe · tap to hit" — tapping draws a card to your own hand.
+- Scoring is manual — use the Scores panel (top bar) to record wins each round, then host taps **Next Round** to re-deal.
+
+---
+
+### Poker (Texas Hold'em)
+
+**Players:** 2–9 · **Cards:** Standard 52-card deck · **Objective:** Best 5-card hand wins the pot
+
+**How it plays (standard Texas Hold'em):**
+- Each player is dealt 2 private hole cards.
+- Betting round (Pre-Flop) → host deals 3 community cards face-up (Flop) → betting → 1 more (Turn) → betting → 1 more (River) → final betting → showdown.
+- Best 5 cards from your 2 hole cards + 5 community cards wins.
+- A player may **Fold** at any time to exit the hand.
+
+**App specifics:**
+- Hole card zones have `owner-only` visibility — only you see your own hole cards.
+- Community zone cards (Flop, Turn, River, Burn) are `face-up` — visible to all. The host draws cards from the deck to these zones using the shared draw pile; the host uses **move_card** or manually flips cards as needed for the burn.
+- The **Fold** button appears in the bottom action bar. Folded players are shown at 40% opacity in the player strip.
+- **Scoring** is manual — the host adjusts scores via the Scores panel after each hand.
+- The app does not enforce bet amounts or pot — those are tracked verbally or with chips.
+
+---
+
+### Euchre
+
+**Players:** Exactly 4 (2 teams of 2) · **Cards:** 24-card deck (9 through A in all suits) · **Objective:** First team to 10 points wins
+
+**How it plays:**
+- Players are seated in alternating teams (Team A: seats 0 & 2, Team B: seats 1 & 3).
+- 5 cards are dealt to each player; 4 cards go to the Kitty (face-down).
+- The **trump suit** is set by the host using the Trump selector in the top bar.
+- Players play one card per trick. The highest trump wins; if no trump played, highest card of the led suit wins.
+- Winner of a trick draws from Kitty (Euchre rule: host can let winner draw the top Kitty card) and plays the next lead.
+- Team that takes 3+ tricks scores 1 point (or 2 for a march — taking all 5). Euchre (ordering trump but taking fewer than 3) gives 2 points to the opposing team.
+- **Scoring:** Tracked in the Scores panel. Host taps **Next Round** after scoring.
+
+**App specifics:**
+- Hand zones are `owner-only` — only you see your cards.
+- The **Kitty** zone is `face-down`; the host reveals it using `flip_card` if needed.
+- Tricks won go into **Team A Tricks** / **Team B Tricks** zones; the count badge shows total tricks won.
+- Seat assignment happens in the Lobby — players must be in alternating seats for teams to be correct.
+
+---
+
+### Cambio
+
+**Players:** 2–6 · **Cards:** Standard 52-card deck + 2 jokers (optional) · **Objective:** Have the lowest total card value when Cambio is called
+
+**How it plays:**
+- Each player is dealt 4 cards face-down in a 2×2 grid. Before play starts, each player peeks at their **bottom 2 cards** for 15 seconds.
+- On your turn, either:
+  - **Draw from the deck** → view the card, then swap it with one of your grid positions (placing your old card on the discard pile) or discard it (which may activate a power).
+  - **Take the top discard** → you must swap it with one of your grid positions (can't discard it back).
+- **Card powers** (activated when you discard without swapping):
+  - **7 or 8** → peek at one of your own cards.
+  - **9 or 10** → peek at one opponent's card.
+  - **Jack or Queen** → blind swap: exchange one of your cards with one opponent's card (neither player looks).
+  - **Red King** → peek any card; then optionally swap the peeked card with one of your own.
+  - **Black King** = 0 points. Red King = 13 points (highest).
+- When you think you have the lowest total, tap **Call Cambio** instead of drawing. Everyone else gets exactly one more turn, then all cards are revealed and scored.
+
+**Card values:** A = 1, 2–10 = face value, J/Q = 10, Black K = 0, Red K = 13.
+
+**App specifics:**
+- All grid positions use `face-down` visibility — the server never sends card values; only `peek_result` events reveal cards temporarily.
+- The initial 15-second peek is sent server-side after dealing, via targeted `peek_result` events (not broadcast to other players).
+- `cambioDrawn` is only sent in the state to the current turn player (server-side redaction).
+- Power state machine: `cambioPower` field drives the UI — the board shows contextual tap instructions for each state (`peek-own`, `peek-opponent`, `blind-swap`, `peek-swap`, `peek-swap-ready`).
+- Lowest total score wins the round. Scores accumulate across rounds.
+
+---
+
+### Bluff
+
+**Players:** 3–8 · **Cards:** Standard 52-card deck, dealt evenly · **Objective:** Get rid of all your cards first, without getting caught lying
+
+**How it plays:**
+- All cards are dealt evenly. Players take turns playing 1 or more cards face-down to the central pile, verbally claiming a rank (e.g., "Three fours").
+- Any other player can challenge by clicking **Call Bluff**. The last played batch of cards is revealed.
+  - If the player **was lying** (any card ≠ claimed rank): the bluffer takes the entire pile.
+  - If the player **was honest**: the caller takes the entire pile.
+- The host resolves each bluff call (since you said the claim verbally, the host decides based on what was claimed vs. revealed).
+- If everyone passes consecutively (all other players pass without playing cards), the pile is cleared and the last player who played starts fresh — they can play any rank.
+- First player to empty their hand wins.
+
+**App specifics:**
+- Hand zones are `owner-only` — only you see your own cards. Cards can be freely rearranged within your hand.
+- The bluff pile is `face-down`; players can't see what's been played.
+- **Claim is verbal** — there is no written claim input. The app doesn't enforce what you say matches what you play.
+- `bluffReveal` field holds the revealed cards + submitter + caller during host resolution. All players see the BluffRevealModal with the actual cards until the host decides.
+- `bluffPassCount` tracks consecutive passes; when it reaches `turnOrder.length - 1`, the pile clears automatically and the last submitter goes again.
+- "Call Bluff" button appears only on the bluff pile zone when it has cards.
+
+---
+
 ## Adding a New Game
 
 1. Add a `GameType` entry in `packages/shared/src/types.ts`

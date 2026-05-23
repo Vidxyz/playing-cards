@@ -16,6 +16,7 @@ export function buildDeck(filter: DeckFilter = {}): Card[] {
   const ranks = filter.ranks ?? RANKS
   const suits = filter.suits ?? SUITS
   const copies = filter.copies ?? 1
+  const jokerCount = filter.jokerCount ?? 0
 
   const cards: Card[] = []
   for (let c = 0; c < copies; c++) {
@@ -24,6 +25,9 @@ export function buildDeck(filter: DeckFilter = {}): Card[] {
         cards.push(makeCard(rank, suit, c))
       }
     }
+  }
+  for (let i = 0; i < jokerCount; i++) {
+    cards.push({ id: `JKR-${i + 1}`, rank: 'JKR', suit: 'spades' })
   }
   return cards
 }

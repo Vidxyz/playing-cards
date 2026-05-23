@@ -46,7 +46,7 @@ export default function RoomPage({ params }: { params: Promise<{ code: string }>
 
 function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSession }) {
   const router = useRouter()
-  const { gameState, status, lastAction, peekResult, send } = useRoom(
+  const { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send } = useRoom(
     roomCode,
     session.playerId,
     session.name,
@@ -109,7 +109,9 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
         myPlayerId={session.playerId}
         send={send}
         lastAction={lastAction}
-        peekResult={peekResult}
+        peekResults={peekResults}
+        initialPeeks={initialPeeks}
+        clearInitialPeeks={clearInitialPeeks}
         onLeave={() => router.replace('/')}
       />
     </div>

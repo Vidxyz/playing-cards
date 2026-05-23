@@ -124,6 +124,79 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
         </Section>
       )}
 
+      {/* Cambio joker count */}
+      {isHost && selectedGame === 'cambio' && (
+        <Section label="Jokers in Deck">
+          <div className="flex gap-2">
+            {[0, 1, 2].map(count => {
+              const active = gameState.cambioJokers === count
+              return (
+                <button
+                  key={count}
+                  onClick={() => send({ type: 'set_cambio_jokers', count })}
+                  className="flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+                  style={{
+                    background: active ? 'var(--accent-dim)' : 'var(--surface)',
+                    color: active ? 'var(--accent)' : 'var(--text-muted)',
+                    border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                  }}
+                >
+                  {count === 0 ? 'None' : count === 1 ? '1 Joker' : '2 Jokers'}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-dim)' }}>
+            Jokers are worth 0 pts
+          </p>
+        </Section>
+      )}
+
+      {/* Blackjack dealer assignment */}
+      {selectedGame === 'blackjack' && (
+        <Section label="Dealer">
+          <div className="flex flex-col gap-1.5">
+            {gameState.players.map(player => {
+              const isDealer = gameState.blackjackDealerId === player.id
+              return (
+                <div key={player.id}
+                  className="flex items-center justify-between rounded-xl px-3 py-2.5"
+                  style={{
+                    background: isDealer ? 'var(--accent-dim)' : 'var(--surface)',
+                    border: '1px solid ' + (isDealer ? 'rgba(245,158,11,0.4)' : 'var(--border)'),
+                  }}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium" style={{ color: isDealer ? 'var(--accent)' : 'var(--text)' }}>
+                      {player.name}
+                    </span>
+                    {isDealer && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                        style={{ background: 'rgba(245,158,11,0.2)', color: 'var(--accent)' }}>
+                        Dealer
+                      </span>
+                    )}
+                  </div>
+                  {isHost && !isDealer && (
+                    <button
+                      onClick={() => send({ type: 'set_dealer', playerId: player.id })}
+                      className="text-xs font-semibold px-3 py-1 rounded-full transition-all active:scale-95"
+                      style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                    >
+                      Set dealer
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+            {!gameState.blackjackDealerId && (
+              <p className="text-[11px] text-center mt-1" style={{ color: 'var(--text-dim)' }}>
+                {isHost ? 'Tap "Set dealer" to assign the dealer role' : 'Host will assign the dealer'}
+              </p>
+            )}
+          </div>
+        </Section>
+      )}
+
       {/* Euchre seat assignment */}
       {isHost && selectedGame === 'euchre' && playerCount === 4 && (
         <Section label="Team Seats">

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import type { GameState, ClientEvent, GameAction, Zone, Suit, BluffReveal, Player } from '@playing-cards/shared'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import type { GameState, ClientEvent, GameAction, Zone, Suit, BluffReveal, Player, Card as CardType } from '@playing-cards/shared'
+import type { PeekResult } from '@/hooks/useRoom'
 import { Hand } from './Hand'
 import { Zone as ZoneView } from './Zone'
 import { PlayerStrip } from './PlayerStrip'
@@ -13,16 +14,26 @@ interface Props {
   myPlayerId: string
   send: (event: ClientEvent) => void
   lastAction: GameAction | null
-  peekResult: { cardId: string; zoneId: string; rank: string; suit: string } | null
+  peekResults: PeekResult[]
+  initialPeeks: PeekResult[]
+  clearInitialPeeks: () => void
   onLeave: () => void
 }
 
 const SUIT_SYMBOL: Record<string, string> = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }
 const SUIT_OPTS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs']
 
-export function GameTable({ gameState, myPlayerId, send, lastAction, peekResult, onLeave }: Props) {
+export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults, initialPeeks, clearInitialPeeks, onLeave }: Props) {
   const [showScores, setShowScores] = useState(false)
   const [isBluffRevealing, setIsBluffRevealing] = useState(false)
+
+  useEffect(() => {
+    if (gameState.phase !== 'round-over') return
+    // For Cambio: delay ScoreBoard so the card-flip reveal animation plays first
+    const delay = gameState.gameType === 'cambio' ? 2200 : 0
+    const t = setTimeout(() => setShowScores(true), delay)
+    return () => clearTimeout(t)
+  }, [gameState.phase, gameState.gameType])
 
   const me = gameState.players.find(p => p.id === myPlayerId)
   const isHost = me?.isHost ?? false
@@ -42,9 +53,6 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResult,
     (z.id.startsWith('hand-') || z.id.startsWith('hole-cards-'))
   )
   const sharedZones = gameState.zones.filter(z => z.ownerId === null)
-  const myCambioZones = gameType === 'cambio'
-    ? gameState.zones.filter(z => z.ownerId === myPlayerId)
-    : []
 
   const playTargets = sharedZones
     .filter(z => !['burn', 'tricks-a', 'tricks-b', 'cleared'].includes(z.id))
@@ -115,18 +123,34 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResult,
             )}
           </div>
 
-          {gameState.trumpSuit && (
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full self-start mt-1"
-              style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
-              {SUIT_SYMBOL[gameState.trumpSuit]} Trump
-            </span>
-          )}
+          {/* Game name + trump badge */}
+          <div className="flex flex-col items-center gap-1">
+            {gameType && (
+              <span className="text-[10px] font-bold uppercase tracking-widest"
+                style={{ color: 'var(--text-muted)' }}>
+                {gameType === 'blackjack' ? 'Blackjack'
+                  : gameType === 'president' ? 'President'
+                  : gameType === 'poker' ? 'Poker'
+                  : gameType === 'euchre' ? 'Euchre'
+                  : gameType === 'cambio' ? 'Cambio'
+                  : 'Bluff'}
+              </span>
+            )}
+            {gameState.trumpSuit && (
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                {SUIT_SYMBOL[gameState.trumpSuit]} Trump
+              </span>
+            )}
+          </div>
 
           <div className="flex gap-1.5">
             <span className="text-xs font-semibold self-center mr-1" style={{ color: 'var(--text-muted)' }}>
               R{gameState.roundNumber}
             </span>
-            <TopBtn onClick={() => send({ type: 'pass_turn' })}>Pass</TopBtn>
+            {gameType !== 'cambio' && gameType !== 'blackjack' && (
+              <TopBtn onClick={() => send({ type: 'pass_turn' })}>Pass</TopBtn>
+            )}
             <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
             {isHost && (
               <TopBtn onClick={() => send({ type: 'next_round' })} accent>
@@ -139,91 +163,140 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResult,
       </div>
 
       {/* ── Table (shared zones + draw pile) ─────────── */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-3 overflow-hidden">
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-3 overflow-y-auto">
 
         {/* Turn indicator */}
         {gameState.turnOrder.length > 0 && gameState.currentTurnPlayerId && (
           <TurnBanner gameState={gameState} myPlayerId={myPlayerId} />
         )}
 
-        {/* Shared zones */}
-        {sharedZones.length > 0 && (
-          <div className="flex flex-wrap gap-5 items-end justify-center">
-            {sharedZones.map(zone => (
-              <ZoneView
-                key={zone.id}
-                zone={zone}
-                playerId={myPlayerId}
-                lastAction={lastAction}
-                onDraw={zone.id === 'kitty' ? () => handleDraw(myHandZones[0]?.id) : undefined}
-                onFlipCard={(cId, zId) => send({ type: 'flip_card', cardId: cId, zoneId: zId })}
-                onCallBluff={zone.isBluffPile ? () => send({ type: 'call_bluff' }) : undefined}
-                isBluffRevealing={isBluffRevealing}
-              />
-            ))}
-          </div>
-        )}
+        {gameType === 'cambio' ? (
+          <CambioBoard
+            gameState={gameState}
+            myPlayerId={myPlayerId}
+            peekResults={peekResults}
+            initialPeeks={initialPeeks}
+            clearInitialPeeks={clearInitialPeeks}
+            send={send}
+            isMyTurn={isMyTurn}
+            showScores={showScores}
+          />
+        ) : gameType === 'blackjack' ? (
+          <BlackjackSection
+            gameState={gameState}
+            myPlayerId={myPlayerId}
+            isHost={isHost}
+            drawPileCount={gameState.drawPileCount}
+            send={send}
+          />
+        ) : (
+          <>
+            {/* Shared zones */}
+            {sharedZones.length > 0 && (
+              <div className="flex flex-wrap gap-5 items-end justify-center">
+                {sharedZones.map(zone => (
+                  <ZoneView
+                    key={zone.id}
+                    zone={zone}
+                    playerId={myPlayerId}
+                    lastAction={lastAction}
+                    onDraw={zone.id === 'kitty' ? () => handleDraw(myHandZones[0]?.id) : undefined}
+                    onFlipCard={(cId, zId) => send({ type: 'flip_card', cardId: cId, zoneId: zId })}
+                    onCallBluff={zone.isBluffPile ? () => send({ type: 'call_bluff' }) : undefined}
+                    isBluffRevealing={isBluffRevealing}
+                  />
+                ))}
+              </div>
+            )}
 
-        {/* Draw pile */}
-        {gameState.drawPileCount > 0 && (
-          <div className="flex flex-col items-center gap-1" onClick={() => handleDraw()}>
-            <div className="relative" style={{ width: 80, height: 116, cursor: 'pointer' }}>
-              <div style={{
-                position: 'absolute', top: -3, left: -3, width: 80, height: 116,
-                borderRadius: 'var(--radius-card)',
-                background: 'linear-gradient(145deg,#1a2d54,#1e3560)',
-                border: '1px solid rgba(255,255,255,0.06)',
-              }} />
-              <div style={{
-                position: 'absolute', top: -1.5, left: -1.5, width: 80, height: 116,
-                borderRadius: 'var(--radius-card)',
-                background: 'linear-gradient(145deg,#1e3560,#243f72)',
-                border: '1px solid rgba(255,255,255,0.08)',
-              }} />
-              <div style={{
-                position: 'absolute', top: 0, left: 0, width: 80, height: 116,
-                borderRadius: 'var(--radius-card)',
-                background: 'linear-gradient(145deg,#243f72,#1e3560)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: 700 }}>
-                  {gameState.drawPileCount}
+            {/* Draw pile */}
+            {gameState.drawPileCount > 0 && (
+              <div className="flex flex-col items-center gap-1" onClick={() => handleDraw()}>
+                <div className="relative" style={{ width: 80, height: 116, cursor: 'pointer' }}>
+                  <div style={{
+                    position: 'absolute', top: -3, left: -3, width: 80, height: 116,
+                    borderRadius: 'var(--radius-card)',
+                    background: 'linear-gradient(145deg,#1a2d54,#1e3560)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                  }} />
+                  <div style={{
+                    position: 'absolute', top: -1.5, left: -1.5, width: 80, height: 116,
+                    borderRadius: 'var(--radius-card)',
+                    background: 'linear-gradient(145deg,#1e3560,#243f72)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                  }} />
+                  <div style={{
+                    position: 'absolute', top: 0, left: 0, width: 80, height: 116,
+                    borderRadius: 'var(--radius-card)',
+                    background: 'linear-gradient(145deg,#243f72,#1e3560)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: 700 }}>
+                      {gameState.drawPileCount}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>
+                  draw
                 </span>
               </div>
-            </div>
-            <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>
-              draw
-            </span>
-          </div>
-        )}
-
-        {/* Cambio 2×2 grid */}
-        {gameType === 'cambio' && myCambioZones.length > 0 && (
-          <CambioGrid
-            zones={myCambioZones}
-            playerId={myPlayerId}
-            peekResult={peekResult}
-            onPeek={(cardId, zoneId) => send({ type: 'peek_card', cardId, zoneId })}
-          />
+            )}
+          </>
         )}
       </div>
 
-      {/* ── My hand ───────────────────────────────────── */}
+      {/* ── My hand (hidden for Cambio; dealer has no player hand in Blackjack) ── */}
+      {gameType !== 'cambio' && !(gameType === 'blackjack' && myPlayerId === gameState.blackjackDealerId) && (
       <div className="flex-shrink-0 pb-safe" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
-        {/* Your turn CTA above hand */}
-        {isMyTurn && gameState.turnOrder.length > 0 && (
-          <div className="px-4 pt-2 fade-in">
-            <div className="w-full py-2 rounded-xl text-center"
-              style={{ background: 'var(--accent)', boxShadow: '0 0 16px rgba(245,158,11,0.25)' }}>
-              <span className="font-black text-sm tracking-widest" style={{ color: '#000' }}>
-                YOUR TURN
-              </span>
-            </div>
+        {/* Your turn CTA — blackjack shows Hit/Stand instead */}
+        {gameType === 'blackjack' ? (
+          <div className="px-4 pt-2 pb-2 flex flex-col gap-2">
+            {me?.isFolded ? (
+              <div className="w-full py-2 rounded-xl text-center"
+                style={{ background: 'rgba(229,62,62,0.12)', border: '1px solid rgba(229,62,62,0.25)' }}>
+                <span className="font-black text-sm tracking-widest" style={{ color: '#fc8181' }}>BUST</span>
+              </div>
+            ) : bjHandValue(myHandZones.flatMap(z => z.cards)) === 21 ? (
+              <div className="w-full py-2 rounded-xl text-center"
+                style={{ background: 'var(--accent-dim)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                <span className="font-black text-sm tracking-widest" style={{ color: 'var(--accent)' }}>
+                  {myHandZones.flatMap(z => z.cards).length === 2 ? 'BLACKJACK!' : '21!'}
+                </span>
+              </div>
+            ) : isMyTurn ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => send({ type: 'draw_card', toZoneId: myHandZones[0]?.id ?? `hand-${myPlayerId}` })}
+                  className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+                  style={{ background: 'var(--accent)', color: '#000' }}
+                >
+                  Hit
+                </button>
+                <button
+                  onClick={() => send({ type: 'pass_turn' })}
+                  className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+                  style={{ background: 'var(--surface-hi)', color: 'var(--text)', border: '1px solid var(--border-hi)' }}
+                >
+                  Stand
+                </button>
+              </div>
+            ) : null}
           </div>
+        ) : (
+          <>
+            {isMyTurn && gameState.turnOrder.length > 0 && (
+              <div className="px-4 pt-2 fade-in">
+                <div className="w-full py-2 rounded-xl text-center"
+                  style={{ background: 'var(--accent)', boxShadow: '0 0 16px rgba(245,158,11,0.25)' }}>
+                  <span className="font-black text-sm tracking-widest" style={{ color: '#000' }}>YOUR TURN</span>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
-        {gameType !== 'cambio' && myHandZones.map(zone => (
+        {myHandZones.map(zone => (
           <Hand
             key={zone.id}
             zone={zone}
@@ -244,8 +317,17 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResult,
           )}
         </div>
       </div>
+      )}
 
-      {showScores && <ScoreBoard gameState={gameState} onClose={() => setShowScores(false)} />}
+      {showScores && (
+        <ScoreBoard
+          gameState={gameState}
+          onClose={() => setShowScores(false)}
+          isHost={isHost}
+          onNextRound={() => send({ type: 'next_round' })}
+          onEndGame={() => send({ type: 'end_game' })}
+        />
+      )}
 
       {gameState.bluffReveal && (
         <BluffRevealModal
@@ -467,54 +549,874 @@ function TrumpSelector({ current, onSelect }: { current: Suit | null; onSelect: 
   )
 }
 
-function CambioGrid({
-  zones, playerId, peekResult, onPeek,
+/* ── Blackjack section ───────────────────────────────── */
+
+function bjHandValue(cards: CardType[]): number {
+  const visible = cards.filter(c => !c.id.endsWith('__facedown') && !c.id.startsWith('hidden_'))
+  let sum = 0, aces = 0
+  for (const c of visible) {
+    if (c.rank === 'A') { aces++; sum += 11 }
+    else if (['J', 'Q', 'K'].includes(c.rank)) sum += 10
+    else sum += Number(c.rank)
+  }
+  while (sum > 21 && aces > 0) { sum -= 10; aces-- }
+  return sum
+}
+
+function BlackjackSection({
+  gameState, myPlayerId, isHost, drawPileCount, send,
 }: {
-  zones: Zone[]
-  playerId: string
-  peekResult: { cardId: string; zoneId: string; rank: string; suit: string } | null
-  onPeek: (cardId: string, zoneId: string) => void
+  gameState: GameState
+  myPlayerId: string
+  isHost: boolean
+  drawPileCount: number
+  send: (e: ClientEvent) => void
 }) {
-  const sorted = [...zones].sort((a, b) => {
-    if (!a.gridPosition || !b.gridPosition) return 0
-    return a.gridPosition.row - b.gridPosition.row || a.gridPosition.col - b.gridPosition.col
-  })
-  const rows = [sorted.slice(0, 2), sorted.slice(2, 4)]
+  const { blackjackDealerId, currentTurnPlayerId, players } = gameState
+  const dealerZone = gameState.zones.find(z => z.id === 'dealer-hand')
+  const hiddenDealerCard = dealerZone?.cards.find(c => c.id.endsWith('__facedown'))
+  const dealerValue = bjHandValue(dealerZone?.cards ?? [])
+  const dealerPlayer = players.find(p => p.id === blackjackDealerId)
+  const isDealerTurn = currentTurnPlayerId === blackjackDealerId
+  const amIDealer = myPlayerId === blackjackDealerId
+
+  // Players shown in table area = everyone except me (dealer is special — no player hand)
+  const otherPlayers = players.filter(p => p.id !== myPlayerId && p.id !== blackjackDealerId)
 
   return (
-    <div className="flex flex-col gap-2">
-      <p className="text-[10px] uppercase tracking-widest text-center" style={{ color: 'var(--text-dim)' }}>
-        Your Cards
-      </p>
-      {rows.map((row, ri) => (
-        <div key={ri} className="flex gap-2 justify-center">
-          {row.map(zone => {
-            const card = zone.cards[0]
-            const isPeeked = card && peekResult?.cardId === card.id && peekResult?.zoneId === zone.id
-            const displayCard = isPeeked
-              ? { ...card, id: card.id.replace('hidden_', ''), rank: peekResult.rank as any, suit: peekResult.suit as any }
-              : card
+    <div className="flex flex-col gap-5 items-center w-full">
+
+      {/* Dealer hand */}
+      <div className="flex flex-col items-center gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-widest font-semibold"
+            style={{ color: isDealerTurn ? 'var(--accent)' : 'var(--text-dim)' }}>
+            {dealerPlayer ? `${dealerPlayer.name} (Dealer)` : 'Dealer'}
+            {isDealerTurn ? ' ▶' : ''}
+          </span>
+          {dealerZone && dealerZone.cards.length > 0 && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+              style={{ background: 'var(--surface-hi)', color: dealerValue > 21 ? '#fc8181' : dealerValue === 21 ? 'var(--accent)' : 'var(--text)', border: '1px solid var(--border-hi)' }}>
+              {hiddenDealerCard ? '?' : dealerValue}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2 justify-center flex-wrap">
+          {dealerZone?.cards.map(card => (
+            <Card
+              key={card.id}
+              card={card}
+              size="md"
+              onClick={amIDealer && isDealerTurn && card.id.endsWith('__facedown')
+                ? () => send({ type: 'flip_card', cardId: card.id, zoneId: 'dealer-hand' })
+                : undefined}
+            />
+          ))}
+        </div>
+        {/* Dealer controls: only visible to dealer player on their turn */}
+        {amIDealer && isDealerTurn && (
+          <div className="flex gap-2">
+            {hiddenDealerCard && (
+              <button
+                onClick={() => send({ type: 'flip_card', cardId: hiddenDealerCard.id, zoneId: 'dealer-hand' })}
+                className="text-[10px] font-bold px-3 py-1.5 rounded-full transition-all active:scale-95"
+                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}
+              >
+                Reveal
+              </button>
+            )}
+            {!hiddenDealerCard && dealerValue < 17 && (
+              <button
+                onClick={() => send({ type: 'draw_card', toZoneId: 'dealer-hand' })}
+                className="text-[10px] font-bold px-3 py-1.5 rounded-full transition-all active:scale-95"
+                style={{ background: 'var(--surface-hi)', color: 'var(--text)', border: '1px solid var(--border-hi)' }}
+              >
+                Hit ({dealerValue})
+              </button>
+            )}
+            {!hiddenDealerCard && dealerValue >= 17 && (
+              <button
+                onClick={() => send({ type: 'pass_turn' })}
+                className="text-[10px] font-bold px-3 py-1.5 rounded-full transition-all active:scale-95"
+                style={{ background: 'var(--surface-hi)', color: 'var(--text)', border: '1px solid var(--border-hi)' }}
+              >
+                Stand ({dealerValue})
+              </button>
+            )}
+          </div>
+        )}
+        {/* Host can also see dealer controls for oversight */}
+        {isHost && !amIDealer && isDealerTurn && (
+          <div className="flex gap-2">
+            {hiddenDealerCard && (
+              <button
+                onClick={() => send({ type: 'flip_card', cardId: hiddenDealerCard.id, zoneId: 'dealer-hand' })}
+                className="text-[10px] font-bold px-3 py-1.5 rounded-full transition-all active:scale-95"
+                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}
+              >
+                Reveal dealer
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Other players' hands (not me, not dealer) */}
+      {otherPlayers.length > 0 && (
+        <div className="flex gap-5 justify-center flex-wrap">
+          {otherPlayers.map(player => {
+            const zone = gameState.zones.find(z => z.id === `hand-${player.id}`)
+            if (!zone || zone.cards.length === 0) return null
+            const val = bjHandValue(zone.cards)
+            const isActive = currentTurnPlayerId === player.id
             return (
-              <div key={zone.id}>
-                {displayCard ? (
-                  <Card
-                    card={displayCard}
-                    faceDown={!isPeeked}
-                    size="md"
-                    animate={isPeeked ? 'flip' : undefined}
-                    onClick={() => card && !isPeeked && onPeek(card.id, zone.id)}
-                  />
-                ) : (
-                  <div style={{
-                    width: 58, height: 86, borderRadius: 'var(--radius-card)',
-                    border: '1.5px dashed rgba(255,255,255,0.1)',
-                  }} />
-                )}
+              <div key={player.id} className="flex flex-col items-center gap-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold truncate max-w-[64px]"
+                    style={{ color: isActive ? 'var(--accent)' : 'var(--text-muted)' }}>
+                    {player.name}{isActive ? ' ▶' : ''}
+                  </span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{
+                      background: 'var(--surface-hi)',
+                      color: player.isFolded ? '#fc8181' : val === 21 ? 'var(--accent)' : 'var(--text)',
+                      border: '1px solid var(--border-hi)',
+                    }}>
+                    {player.isFolded ? 'Bust' : val}
+                  </span>
+                </div>
+                <div className="flex gap-1.5 flex-wrap justify-center">
+                  {zone.cards.map(card => <Card key={card.id} card={card} size="sm" />)}
+                </div>
               </div>
             )
           })}
         </div>
-      ))}
+      )}
+
+      {/* Shoe */}
+      {drawPileCount > 0 && (
+        <div className="flex flex-col items-center gap-1">
+          <div className="relative" style={{ width: 58, height: 86 }}>
+            <div style={{ position: 'absolute', top: -2, left: -2, width: 58, height: 86, borderRadius: 'var(--radius-card)', background: 'linear-gradient(145deg,#1a2d54,#1e3560)', border: '1px solid rgba(255,255,255,0.06)' }} />
+            <div style={{ position: 'absolute', top: -1, left: -1, width: 58, height: 86, borderRadius: 'var(--radius-card)', background: 'linear-gradient(145deg,#1e3560,#243f72)', border: '1px solid rgba(255,255,255,0.08)' }} />
+            <div style={{ position: 'absolute', top: 0, left: 0, width: 58, height: 86, borderRadius: 'var(--radius-card)', background: 'linear-gradient(145deg,#243f72,#1e3560)', border: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: 700 }}>{drawPileCount}</span>
+            </div>
+          </div>
+          <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>shoe</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function cambioPowerLabel(rank: string, suit: string): string | null {
+  if (rank === '7' || rank === '8') return 'Peek your own card'
+  if (rank === '9' || rank === '10') return "Peek opponent's card"
+  if (rank === 'J' || rank === 'Q') return 'Blind swap any two cards'
+  if (rank === 'K' && (suit === 'spades' || suit === 'clubs')) return 'Peek any card + swap'
+  return null
+}
+
+function zonePosLabel(zoneId: string): string {
+  const parts = zoneId.split('-')
+  const col = parseInt(parts[parts.length - 1])
+  const row = parseInt(parts[parts.length - 2])
+  if (isNaN(row) || isNaN(col)) return 'card'
+  const r = row === 0 ? 'top' : row === 1 ? 'bottom' : `row ${row + 1}`
+  const c = col === 0 ? 'left' : 'right'
+  return `${r}-${c}`
+}
+
+function buildSwapMessage(
+  z1Id: string, z2Id: string,
+  zones: Zone[], players: Player[], myPlayerId: string,
+): string {
+  const owner1 = zones.find(z => z.id === z1Id)?.ownerId
+  const owner2 = zones.find(z => z.id === z2Id)?.ownerId
+  const pos1 = zonePosLabel(z1Id)
+  const pos2 = zonePosLabel(z2Id)
+  const nameOf = (id: string | null | undefined, possessive = true) => {
+    if (!id) return possessive ? "someone's" : 'someone'
+    if (id === myPlayerId) return possessive ? 'your' : 'you'
+    const n = players.find(p => p.id === id)?.name ?? 'someone'
+    return possessive ? `${n}'s` : n
+  }
+  const mine1 = owner1 === myPlayerId
+  const mine2 = owner2 === myPlayerId
+  if (mine1 && mine2) return `Your ${pos1} ↔ your ${pos2}`
+  if (mine1) return `Your ${pos1} ↔ ${nameOf(owner2)} ${pos2}`
+  if (mine2) return `${nameOf(owner1)} ${pos1} ↔ your ${pos2}`
+  return `${nameOf(owner1)} ${pos1} ↔ ${nameOf(owner2)} ${pos2}`
+}
+
+/* ── Cambio board ────────────────────────────────────── */
+
+function CambioBoard({
+  gameState, myPlayerId, peekResults, initialPeeks, clearInitialPeeks, send, isMyTurn, showScores,
+}: {
+  gameState: GameState
+  myPlayerId: string
+  peekResults: PeekResult[]
+  initialPeeks: PeekResult[]
+  clearInitialPeeks: () => void
+  send: (event: ClientEvent) => void
+  isMyTurn: boolean
+  showScores: boolean
+}) {
+  const [blindSwapZone1, setBlindSwapZone1] = useState<string | null>(null)
+  const [stickCandidateZone, setStickCandidateZone] = useState<string | null>(null)
+  const [swappedZoneIds, setSwappedZoneIds] = useState<string[]>([])
+  const [discardFlash, setDiscardFlash] = useState(false)
+  const [stickFlip, setStickFlip] = useState(false)
+  const [stickToast, setStickToast] = useState<{ success: boolean; playerName: string } | null>(null)
+  const [penaltyFlashZoneId, setPenaltyFlashZoneId] = useState<string | null>(null)
+  const [powerSwapToast, setPowerSwapToast] = useState<{ message: string } | null>(null)
+  const [swapToast, setSwapToast] = useState<{ message: string } | null>(null)
+  const [drawToast, setDrawToast] = useState<{ playerName: string; rank: string; suit: string; power: string | null } | null>(null)
+  const gsRef = useRef(gameState)
+  // Initial peek overlay: 'idle' | 'prepare' | 'revealing'
+  const [peekPhase, setPeekPhase] = useState<'idle' | 'prepare' | 'revealing'>('idle')
+  const [countdown, setCountdown] = useState(3)
+  // Mid-game peek countdown (7/8/9/10 power peeks)
+  const [peekCountdown, setPeekCountdown] = useState(0)
+
+  // Show the prepare screen as soon as initial peeks arrive
+  useEffect(() => {
+    if (initialPeeks.length > 0 && peekPhase === 'idle') {
+      setPeekPhase('prepare')
+    }
+  }, [initialPeeks.length, peekPhase])
+
+  // Countdown tick when revealing
+  useEffect(() => {
+    if (peekPhase !== 'revealing') return
+    if (countdown <= 0) {
+      clearInitialPeeks()
+      setPeekPhase('idle')
+      return
+    }
+    const t = setTimeout(() => setCountdown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [peekPhase, countdown, clearInitialPeeks])
+
+  // Start/reset countdown whenever a mid-game peek result arrives
+  useEffect(() => {
+    if (peekResults.length > 0) {
+      setPeekCountdown(3)
+    } else {
+      setPeekCountdown(0)
+    }
+  }, [peekResults])
+
+  // Tick the mid-game peek countdown
+  useEffect(() => {
+    if (peekCountdown <= 0) return
+    const t = setTimeout(() => setPeekCountdown(c => Math.max(0, c - 1)), 1000)
+    return () => clearTimeout(t)
+  }, [peekCountdown])
+
+  // Clear stick candidate when it becomes your turn
+  useEffect(() => {
+    if (isMyTurn) setStickCandidateZone(null)
+  }, [isMyTurn])
+
+  // Keep game state ref fresh so lastAction effects can read it without re-triggering
+  useEffect(() => { gsRef.current = gameState })
+
+  // Flash animation when a card lands in a player zone (drawn-card swap) or discard
+  useEffect(() => {
+    const action = gameState.lastAction
+    if (!action || action.type !== 'play') return
+    if (action.toZoneId?.startsWith('pos-')) {
+      const { players, zones } = gsRef.current
+      const owner = zones.find(z => z.id === action.toZoneId)?.ownerId
+      const pos = zonePosLabel(action.toZoneId)
+      const isMe = owner === myPlayerId
+      const name = isMe ? 'You' : (players.find(p => p.id === owner)?.name ?? 'Player')
+      const msg = isMe ? `You swapped your ${pos} card` : `${name} swapped their ${pos} card`
+      setSwappedZoneIds([action.toZoneId])
+      setDiscardFlash(true)
+      setSwapToast({ message: msg })
+      const t1 = setTimeout(() => setSwappedZoneIds([]), 4000)
+      const t2 = setTimeout(() => setDiscardFlash(false), 4000)
+      const t3 = setTimeout(() => setSwapToast(null), 5000)
+      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+    }
+    if (action.toZoneId === 'discard') {
+      setDiscardFlash(true)
+      const t = setTimeout(() => setDiscardFlash(false), 1200)
+      return () => clearTimeout(t)
+    }
+  }, [gameState.lastAction, myPlayerId])
+
+  // Power swap animation (J/Q blind-swap or Black K peek-swap) — both zones flash
+  useEffect(() => {
+    const action = gameState.lastAction
+    if (!action || action.type !== 'move') return
+    if (!action.fromZoneId?.startsWith('pos-') || !action.toZoneId?.startsWith('pos-')) return
+    const { players, zones } = gsRef.current
+    const msg = buildSwapMessage(action.fromZoneId, action.toZoneId, zones, players, myPlayerId)
+    setSwappedZoneIds([action.fromZoneId, action.toZoneId])
+    setPowerSwapToast({ message: msg })
+    const t1 = setTimeout(() => setSwappedZoneIds([]), 4000)
+    const t2 = setTimeout(() => setPowerSwapToast(null), 5000)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [gameState.lastAction, myPlayerId])
+
+  // Draw toast: show who drew what card and its power (Cambio draws have no toZoneId)
+  useEffect(() => {
+    const action = gameState.lastAction
+    if (!action || action.type !== 'draw' || action.toZoneId) return
+    const drawn = gameState.cambioDrawn
+    if (!drawn) return
+    const playerName = gsRef.current.players.find(p => p.id === action.playerId)?.name ?? 'Player'
+    const power = cambioPowerLabel(drawn.card.rank, drawn.card.suit)
+    setDrawToast({ playerName, rank: drawn.card.rank, suit: drawn.card.suit, power })
+    const t = setTimeout(() => setDrawToast(null), 3500)
+    return () => clearTimeout(t)
+  }, [gameState.lastAction]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stick result animations — visible to all players
+  useEffect(() => {
+    const action = gameState.lastAction
+    if (!action) return
+    const playerName = gsRef.current.players.find(p => p.id === action.playerId)?.name ?? 'Player'
+    if (action.type === 'stick_success') {
+      setStickToast({ success: true, playerName })
+      setDiscardFlash(true)
+      setStickFlip(true)
+      const t1 = setTimeout(() => setStickToast(null), 2000)
+      const t2 = setTimeout(() => setDiscardFlash(false), 1200)
+      const t3 = setTimeout(() => setStickFlip(false), 1200)
+      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+    }
+    if (action.type === 'stick_fail') {
+      setStickToast({ success: false, playerName })
+      if (action.toZoneId) setPenaltyFlashZoneId(action.toZoneId)
+      const t1 = setTimeout(() => setStickToast(null), 2000)
+      const t2 = setTimeout(() => setPenaltyFlashZoneId(null), 1200)
+      return () => { clearTimeout(t1); clearTimeout(t2) }
+    }
+  }, [gameState.lastAction])
+
+  const handleReady = () => {
+    setCountdown(3)
+    setPeekPhase('revealing')
+  }
+
+  const handleDismissEarly = () => {
+    clearInitialPeeks()
+    setPeekPhase('idle')
+  }
+
+  const { cambioDrawn, cambioPower, cambioCaller } = gameState
+
+  const sortZones = (zones: Zone[]) =>
+    [...zones].sort((a, b) => {
+      if (!a.gridPosition || !b.gridPosition) return 0
+      return a.gridPosition.row - b.gridPosition.row || a.gridPosition.col - b.gridPosition.col
+    })
+
+  const myZones = sortZones(gameState.zones.filter(z => z.ownerId === myPlayerId && z.id.startsWith('pos-')))
+  const otherPlayers = gameState.players.filter(p => p.id !== myPlayerId)
+  const discardZone = gameState.zones.find(z => z.id === 'discard')
+  const topDiscard = discardZone?.cards.at(-1) ?? null
+
+  const getPeek = (zoneId: string) => peekResults.find(pr => pr.zoneId === zoneId) ?? null
+
+  const canActOnDeck = isMyTurn && !cambioDrawn && !cambioPower
+  const canDiscardDrawn = !!cambioDrawn
+  const drawnHasPower = !!cambioDrawn && ['7', '8', '9', '10', 'J', 'Q', 'K'].includes(cambioDrawn.card.rank)
+
+  const handleAnyZoneTap = (zone: Zone, isMine: boolean) => {
+    if (!zone.cards[0]) return
+
+    // Non-turn players tap their own face-down cards to attempt a stick
+    if (!isMyTurn && isMine && topDiscard) {
+      if (stickCandidateZone === zone.id) {
+        // Second tap = confirm stick
+        send({ type: 'cambio_stick', zoneId: zone.id })
+        setStickCandidateZone(null)
+      } else {
+        // First tap = mark as candidate (green glow)
+        setStickCandidateZone(zone.id)
+      }
+      return
+    }
+
+    if (!isMyTurn) return
+
+    if (isMine && cambioDrawn) {
+      send({ type: 'cambio_swap', targetZoneId: zone.id })
+      return
+    }
+    if (isMine && cambioPower === 'peek-own') {
+      send({ type: 'cambio_power_peek', cardId: zone.cards[0].id, zoneId: zone.id })
+      return
+    }
+    if (!isMine && cambioPower === 'peek-opponent') {
+      send({ type: 'cambio_power_peek', cardId: zone.cards[0].id, zoneId: zone.id })
+      return
+    }
+    if (cambioPower === 'peek-swap') {
+      send({ type: 'cambio_power_peek', cardId: zone.cards[0].id, zoneId: zone.id })
+      return
+    }
+    if (isMine && cambioPower === 'peek-swap-ready') {
+      send({ type: 'cambio_power_swap', zoneId1: zone.id })
+      return
+    }
+    if (cambioPower === 'blind-swap') {
+      if (!blindSwapZone1) {
+        setBlindSwapZone1(zone.id)
+      } else if (zone.id !== blindSwapZone1) {
+        send({ type: 'cambio_power_swap', zoneId1: blindSwapZone1, zoneId2: zone.id })
+        setBlindSwapZone1(null)
+      }
+    }
+  }
+
+  const myZoneTappable = isMyTurn && (
+    !!cambioDrawn ||
+    cambioPower === 'peek-own' ||
+    cambioPower === 'blind-swap' ||
+    cambioPower === 'peek-swap-ready' ||
+    cambioPower === 'peek-swap'
+  )
+
+  const opponentZoneTappable = isMyTurn && (
+    cambioPower === 'peek-opponent' ||
+    cambioPower === 'peek-swap' ||
+    cambioPower === 'blind-swap'
+  )
+
+  // Can non-turn player initiate stick?
+  const canTapForStick = !isMyTurn && !!topDiscard
+
+  const instruction = (() => {
+    if (!isMyTurn) {
+      if (stickCandidateZone) return 'Tap the same card again to confirm your stick!'
+      if (topDiscard) return 'Tap one of your cards twice to attempt a stick.'
+      return null
+    }
+    if (cambioDrawn) {
+      if (drawnHasPower) return 'Tap one of your cards to swap, or discard to use the power.'
+      return 'Tap one of your cards to swap, or discard it.'
+    }
+    switch (cambioPower) {
+      case 'peek-own': return 'Tap one of your cards to peek.'
+      case 'peek-opponent': return "Tap an opponent's card to peek."
+      case 'blind-swap': return blindSwapZone1 ? 'Now tap any card to complete the swap.' : 'Tap any card, then tap another to swap them.'
+      case 'peek-swap': return 'Tap any card to peek (Black King power).'
+      case 'peek-swap-ready': return 'Tap one of your cards to swap with the peeked card, or skip.'
+      default: return null
+    }
+  })()
+
+  const isRoundOver = gameState.phase === 'round-over'
+
+  const renderGrid = (zones: Zone[], isMine: boolean, tappable: boolean, size: 'sm' | 'md') => {
+    const dim = size === 'sm' ? { w: 40, h: 58 } : { w: 58, h: 86 }
+    const maxRow = zones.reduce((max, z) => Math.max(max, z.gridPosition?.row ?? 0), 1)
+    const stickTappable = isMine && canTapForStick
+    return (
+      <div className="flex flex-col gap-1.5">
+        {Array.from({ length: maxRow + 1 }, (_, row) => (
+          <div key={row} className="flex gap-1.5">
+            {[0, 1].map(col => {
+              const zone = zones.find(z => z.gridPosition?.row === row && z.gridPosition?.col === col)
+              const card = zone?.cards[0]
+              const pr = zone ? getPeek(zone.id) : null
+              const isSelected = zone?.id === blindSwapZone1
+              const isCandidate = zone?.id === stickCandidateZone
+              const isSwapped = !!zone && swappedZoneIds.includes(zone.id)
+              const isPenalty = zone?.id === penaltyFlashZoneId
+              const clickable = (tappable || stickTappable) && !!zone && !!card
+              return (
+                <div
+                  key={`${row}-${col}`}
+                  onClick={() => clickable && handleAnyZoneTap(zone!, isMine)}
+                  style={{
+                    position: 'relative',
+                    cursor: clickable ? 'pointer' : 'default',
+                    outline: isSelected
+                      ? '2px solid var(--accent)'
+                      : isCandidate
+                        ? '2px solid #4ade80'
+                        : isSwapped
+                          ? '2px solid rgba(74,222,128,0.6)'
+                          : isPenalty
+                            ? '2px solid rgba(248,113,113,0.9)'
+                            : undefined,
+                    outlineOffset: (isSelected || isCandidate || isSwapped || isPenalty) ? '2px' : undefined,
+                    boxShadow: isPenalty ? '0 0 14px rgba(248,113,113,0.45)' : undefined,
+                    borderRadius: 'var(--radius-card)',
+                    opacity: clickable ? 1 : 0.85,
+                    transition: 'outline 0.15s ease, box-shadow 0.15s ease',
+                  }}
+                >
+                  {card ? (
+                    <>
+                      <Card
+                        card={pr ? { id: pr.cardId, rank: pr.rank as any, suit: pr.suit as any } : card}
+                        faceDown={!pr && zone?.visibility !== 'face-up'}
+                        size={size}
+                        animate={pr ? 'flip' : isRoundOver && zone?.visibility === 'face-up' ? 'flip' : isSwapped ? 'deal' : undefined}
+                      />
+                      {pr && peekCountdown > 0 && (
+                        <div style={{
+                          position: 'absolute',
+                          top: -8,
+                          right: -8,
+                          width: 22,
+                          height: 22,
+                          borderRadius: '50%',
+                          background: 'var(--accent)',
+                          color: '#000',
+                          fontSize: 11,
+                          fontWeight: 900,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          zIndex: 10,
+                          boxShadow: '0 0 10px rgba(245,158,11,0.6)',
+                          pointerEvents: 'none',
+                        }}>
+                          {peekCountdown}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ width: dim.w, height: dim.h, borderRadius: 'var(--radius-card)', border: '1.5px dashed rgba(255,255,255,0.1)' }} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3 w-full items-center">
+
+      {/* Cambio called banner */}
+      {cambioCaller && (
+        <div className="w-full px-3 py-2 rounded-xl text-center text-xs font-semibold"
+          style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
+          {gameState.players.find(p => p.id === cambioCaller)?.name ?? 'Someone'} called Cambio — one more turn each!
+        </div>
+      )}
+
+      {/* Instruction */}
+      {instruction && (
+        <p className="text-xs text-center font-medium" style={{ color: stickCandidateZone ? '#4ade80' : 'var(--text-muted)' }}>{instruction}</p>
+      )}
+
+      {/* Other players' grids */}
+      {otherPlayers.length > 0 && (
+        <div className="flex gap-5 justify-center flex-wrap">
+          {otherPlayers.map(player => {
+            const pZones = sortZones(gameState.zones.filter(z => z.ownerId === player.id && z.id.startsWith('pos-')))
+            const isActive = gameState.currentTurnPlayerId === player.id
+            return (
+              <div key={player.id} className="flex flex-col items-center gap-1">
+                <span className="text-[10px] font-semibold truncate max-w-[80px]"
+                  style={{ color: isActive ? 'var(--accent)' : 'var(--text-muted)' }}>
+                  {player.name}{isActive ? ' ▶' : ''}
+                </span>
+                {renderGrid(pZones, false, opponentZoneTappable, 'sm')}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Deck · Discard · Drawn card */}
+      <div className="flex gap-4 items-end justify-center">
+
+        {/* Draw pile */}
+        {gameState.drawPileCount > 0 && (
+          <div className="flex flex-col items-center gap-1">
+            <div
+              onClick={() => canActOnDeck && send({ type: 'draw_card', toZoneId: `hand-${myPlayerId}` })}
+              className="relative"
+              style={{ width: 58, height: 86, cursor: canActOnDeck ? 'pointer' : 'default' }}
+            >
+              <div style={{ position: 'absolute', top: -2, left: -2, width: 58, height: 86, borderRadius: 'var(--radius-card)', background: 'linear-gradient(145deg,#1a2d54,#1e3560)', border: '1px solid rgba(255,255,255,0.06)' }} />
+              <div style={{ position: 'absolute', top: -1, left: -1, width: 58, height: 86, borderRadius: 'var(--radius-card)', background: 'linear-gradient(145deg,#1e3560,#243f72)', border: '1px solid rgba(255,255,255,0.08)' }} />
+              <div style={{ position: 'absolute', top: 0, left: 0, width: 58, height: 86, borderRadius: 'var(--radius-card)', background: 'linear-gradient(145deg,#243f72,#1e3560)', border: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: 700 }}>{gameState.drawPileCount}</span>
+              </div>
+            </div>
+            {canActOnDeck && (
+              <button
+                onClick={() => send({ type: 'draw_card', toZoneId: `hand-${myPlayerId}` })}
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: 'var(--accent)', color: '#000' }}
+              >
+                Draw
+              </button>
+            )}
+            <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>deck</span>
+          </div>
+        )}
+
+        {/* Discard pile — view only, no take */}
+        {discardZone && (
+          <div className="flex flex-col items-center gap-1">
+            <div style={{
+              position: 'relative',
+              borderRadius: 'var(--radius-card)',
+              outline: discardFlash ? '2px solid rgba(74,222,128,0.8)' : undefined,
+              outlineOffset: discardFlash ? '2px' : undefined,
+              boxShadow: discardFlash ? '0 0 14px rgba(74,222,128,0.4)' : undefined,
+              transition: 'box-shadow 0.15s ease, outline 0.15s ease',
+            }}>
+              {topDiscard ? (
+                <Card card={topDiscard} size="md" animate={discardFlash ? 'deal' : undefined} />
+              ) : (
+                <div style={{ width: 58, height: 86, borderRadius: 'var(--radius-card)', border: '1.5px dashed rgba(255,255,255,0.1)' }} />
+              )}
+            </div>
+            <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>discard</span>
+          </div>
+        )}
+
+        {/* Drawn card — visible to all players so anyone can consider sticking */}
+        {cambioDrawn && (
+          <div className="flex flex-col items-center gap-1">
+            <Card card={cambioDrawn.card} size="md" animate="deal" />
+            {isMyTurn && (
+              <div className="flex flex-col gap-0.5 items-center">
+                {/* Discard without using power — always available */}
+                <button
+                  onClick={() => send({ type: 'cambio_discard_drawn', usePower: false })}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(229,62,62,0.14)', color: '#fc8181', border: '1px solid rgba(229,62,62,0.3)' }}
+                >
+                  Discard
+                </button>
+                {/* Use power — only shown for action cards (7+) */}
+                {drawnHasPower && (
+                  <button
+                    onClick={() => send({ type: 'cambio_discard_drawn', usePower: true })}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ background: 'rgba(245,158,11,0.14)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}
+                  >
+                    Use Power
+                  </button>
+                )}
+              </div>
+            )}
+            <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>drawn</span>
+          </div>
+        )}
+      </div>
+
+      {/* My 2×2 grid */}
+      <div className="flex flex-col items-center gap-2">
+        <span className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>Your Cards</span>
+        {renderGrid(myZones, true, myZoneTappable, 'md')}
+      </div>
+
+      {/* Call Cambio */}
+      {isMyTurn && !cambioCaller && !cambioDrawn && !cambioPower && (
+        <button
+          onClick={() => send({ type: 'cambio_call' })}
+          className="text-sm font-bold px-6 py-2 rounded-2xl transition-all active:scale-95"
+          style={{ background: 'var(--accent)', color: '#000' }}
+        >
+          Call Cambio
+        </button>
+      )}
+
+      {/* Skip swap (peek-swap-ready) */}
+      {isMyTurn && cambioPower === 'peek-swap-ready' && (
+        <button
+          onClick={() => send({ type: 'cambio_power_skip' })}
+          className="text-xs font-semibold px-4 py-1.5 rounded-full"
+          style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+        >
+          Skip swap
+        </button>
+      )}
+
+      {/* ── Draw toast: who drew what + power ── */}
+      {drawToast && !stickToast && !powerSwapToast && (
+        <div
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-0.5 px-5 py-3 rounded-2xl shadow-xl"
+          style={{
+            background: 'rgba(30,30,40,0.92)',
+            border: '1.5px solid rgba(255,255,255,0.1)',
+            backdropFilter: 'blur(8px)',
+            animation: 'fadeIn 0.2s ease-out both',
+            minWidth: 180,
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-sm" style={{ color: 'var(--text)' }}>
+              {drawToast.playerName}
+            </span>
+            <span className="font-black text-base" style={{
+              color: (drawToast.suit === 'hearts' || drawToast.suit === 'diamonds') ? '#f87171' : 'var(--text)',
+            }}>
+              {drawToast.rank === 'JKR' ? 'Joker' : drawToast.rank}{SUIT_SYMBOL[drawToast.suit]}
+            </span>
+          </div>
+          {drawToast.power ? (
+            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
+              {drawToast.power}
+            </span>
+          ) : (
+            <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>No power</span>
+          )}
+        </div>
+      )}
+
+      {/* ── Stick result toast ── */}
+      {stickToast && (
+        <div
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl"
+          style={{
+            background: stickToast.success ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+            border: `1.5px solid ${stickToast.success ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)'}`,
+            color: stickToast.success ? '#4ade80' : '#f87171',
+            backdropFilter: 'blur(8px)',
+            animation: 'fadeIn 0.2s ease-out both',
+          }}
+        >
+          <span style={{ fontSize: 18 }}>{stickToast.success ? '✓' : '✗'}</span>
+          <span>
+            {stickToast.playerName} — {stickToast.success ? 'Stick!' : 'Wrong! +1 card'}
+          </span>
+        </div>
+      )}
+
+      {/* ── Drawn-card swap toast ── */}
+      {swapToast && !stickToast && !powerSwapToast && (
+        <div
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl"
+          style={{
+            background: 'rgba(74,222,128,0.1)',
+            border: '1.5px solid rgba(74,222,128,0.5)',
+            color: '#4ade80',
+            backdropFilter: 'blur(8px)',
+            animation: 'fadeIn 0.2s ease-out both',
+          }}
+        >
+          <span style={{ fontSize: 18 }}>⇄</span>
+          <span>{swapToast.message}</span>
+        </div>
+      )}
+
+      {/* ── Power swap toast (J/Q/Black K) — personalized per player ── */}
+      {powerSwapToast && !stickToast && (
+        <div
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl"
+          style={{
+            background: 'rgba(139,92,246,0.15)',
+            border: '1.5px solid rgba(139,92,246,0.6)',
+            color: '#c4b5fd',
+            backdropFilter: 'blur(8px)',
+            animation: 'fadeIn 0.2s ease-out both',
+          }}
+        >
+          <span style={{ fontSize: 18 }}>⇄</span>
+          <span>{powerSwapToast.message}</span>
+        </div>
+      )}
+
+      {/* ── Round-over card reveal banner ── */}
+      {isRoundOver && !showScores && peekPhase === 'idle' && (
+        <div
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-2 px-8 py-5 rounded-3xl shadow-2xl"
+          style={{
+            background: 'rgba(15,15,20,0.92)',
+            border: '1.5px solid rgba(245,158,11,0.4)',
+            backdropFilter: 'blur(12px)',
+            animation: 'fadeIn 0.3s ease-out both',
+          }}
+        >
+          <span style={{ fontSize: 28 }}>🃏</span>
+          <span className="font-black text-lg" style={{ color: 'var(--accent)' }}>Cards Revealed!</span>
+          <span className="text-xs" style={{ color: 'var(--text-dim)' }}>Scores coming up…</span>
+        </div>
+      )}
+
+      {/* ── Initial card peek overlay ── */}
+      {peekPhase === 'prepare' && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-end pb-safe"
+          style={{ background: 'rgba(0,0,0,0.94)' }}>
+          <div className="flex flex-col items-center gap-5 px-6 pb-12 pt-8 w-full max-w-sm">
+            <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl"
+              style={{ background: 'var(--accent-dim)', border: '1px solid rgba(245,158,11,0.3)' }}>
+              🃏
+            </div>
+            <div className="text-center flex flex-col gap-2">
+              <h2 className="font-black text-xl" style={{ color: 'var(--text)' }}>
+                Memorize your cards!
+              </h2>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                You'll see your 2 bottom cards for{' '}
+                <span className="font-bold" style={{ color: 'var(--accent)' }}>3 seconds</span>.
+              </p>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                After that, they're hidden forever — this is your only chance!
+              </p>
+            </div>
+            <button
+              onClick={handleReady}
+              className="w-full py-4 rounded-2xl font-bold text-base transition-all active:scale-95 mt-2"
+              style={{ background: 'var(--accent)', color: '#000' }}
+            >
+              Show me my cards
+            </button>
+          </div>
+        </div>
+      )}
+
+      {peekPhase === 'revealing' && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 px-6"
+          style={{ background: 'rgba(0,0,0,0.96)' }}
+          onClick={handleDismissEarly}
+        >
+          <p className="text-[10px] uppercase tracking-[0.2em] font-semibold"
+            style={{ color: 'var(--text-dim)' }}>
+            Your bottom 2 cards
+          </p>
+          <div className="flex gap-5">
+            {initialPeeks.map(peek => (
+              <Card
+                key={peek.zoneId}
+                card={{ id: peek.cardId, rank: peek.rank as any, suit: peek.suit as any }}
+                size="lg"
+                animate="flip"
+              />
+            ))}
+          </div>
+          {/* Countdown circle */}
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-20 h-20 rounded-full flex items-center justify-center"
+              style={{
+                border: '3px solid var(--accent)',
+                background: 'var(--surface)',
+                boxShadow: '0 0 24px rgba(245,158,11,0.25)',
+              }}>
+              <span className="font-black text-4xl" style={{ color: 'var(--accent)' }}>
+                {countdown}
+              </span>
+            </div>
+            <p className="text-[11px]" style={{ color: 'var(--text-dim)' }}>
+              Tap anywhere to dismiss early
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
