@@ -27,6 +27,76 @@ export function Zone({ zone, playerId, lastAction, onDraw, onFlipCard, onCallBlu
 
   const wasJustPlayed = lastAction?.type === 'play' && lastAction.toZoneId === zone.id
 
+  // Bluff pile renders as a horizontal fan of face-down cards
+  if (zone.isBluffPile) {
+    const CARD_W = 80
+    const CARD_H = 116
+    const MAX_WIDTH = 300
+    const overlap = count > 1
+      ? Math.max(0, Math.ceil((count * CARD_W - MAX_WIDTH) / (count - 1)))
+      : 0
+    const fanWidth = count > 0 ? CARD_W + (count - 1) * (CARD_W - overlap) : CARD_W
+
+    return (
+      <div className="flex flex-col items-center gap-1.5">
+        {/* Zone label + claim */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-widest font-semibold"
+            style={{ color: 'var(--text-dim)' }}>
+            {zone.name}
+          </span>
+          {zone.claimLabel && !revealBluff && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+              style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
+              "{zone.claimLabel}"
+            </span>
+          )}
+        </div>
+
+        {/* Fan */}
+        {count === 0 ? (
+          <EmptySlot compact={false} />
+        ) : (
+          <div style={{
+            position: 'relative',
+            width: fanWidth,
+            height: CARD_H,
+            outline: flashWarn ? '2px solid rgba(239,68,68,0.8)' : undefined,
+            outlineOffset: flashWarn ? '5px' : undefined,
+            boxShadow: flashWarn ? '0 0 20px rgba(239,68,68,0.5)' : undefined,
+            transition: 'outline 0.2s ease, box-shadow 0.2s ease',
+          }}>
+            {Array.from({ length: count }).map((_, i) => (
+              <div key={i} style={{ position: 'absolute', left: i * (CARD_W - overlap), zIndex: i }}>
+                <Card
+                  card={{ id: `bluff-pile-${i}`, rank: '2', suit: 'spades' }}
+                  faceDown
+                  size="lg"
+                  animate={i === count - 1 && wasJustPlayed ? 'slide' : undefined}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Call bluff button */}
+        {count > 0 && onCallBluff && (
+          <button
+            onClick={onCallBluff}
+            className="text-[11px] font-bold px-3 py-1 rounded-full transition-all active:scale-95"
+            style={{
+              background: 'rgba(229,62,62,0.15)',
+              border: '1px solid rgba(229,62,62,0.35)',
+              color: '#fc8181',
+            }}
+          >
+            Call Bluff
+          </button>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col items-center gap-1.5">
       {/* Zone label */}
@@ -114,21 +184,6 @@ export function Zone({ zone, playerId, lastAction, onDraw, onFlipCard, onCallBlu
           </>
         )}
       </div>
-
-      {/* Bluff call button */}
-      {zone.isBluffPile && count > 0 && onCallBluff && (
-        <button
-          onClick={onCallBluff}
-          className="text-[11px] font-bold px-3 py-1 rounded-full transition-all active:scale-95"
-          style={{
-            background: 'rgba(229,62,62,0.15)',
-            border: '1px solid rgba(229,62,62,0.35)',
-            color: '#fc8181',
-          }}
-        >
-          Call Bluff
-        </button>
-      )}
 
       {/* Draw pile hint */}
       {onDraw && count > 0 && (

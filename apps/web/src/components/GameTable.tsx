@@ -8,7 +8,7 @@ import { Zone as ZoneView } from './Zone'
 import { PlayerStrip } from './PlayerStrip'
 import { ScoreBoard } from './ScoreBoard'
 import { Card } from './Card'
-import { CambioTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal } from './CambioTutorial'
 
 interface Props {
   gameState: GameState
@@ -27,6 +27,7 @@ const SUIT_OPTS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs']
 export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults, initialPeeks, clearInitialPeeks, onLeave }: Props) {
   const [showScores, setShowScores] = useState(false)
   const [showCambioTutorial, setShowCambioTutorial] = useState(false)
+  const [showBluffTutorial, setShowBluffTutorial] = useState(false)
   const [isBluffRevealing, setIsBluffRevealing] = useState(false)
   const [pilePickupToast, setPilePickupToast] = useState<{ playerName: string; cardCount: number; isMe: boolean } | null>(null)
   const [bluffPileFlash, setBluffPileFlash] = useState(false)
@@ -50,6 +51,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const isHost = me?.isHost ?? false
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId
   const gameType = gameState.gameType
+  const myHasPassed = gameState.bluffPassedPlayerIds.includes(myPlayerId)
 
   useEffect(() => {
     if (lastAction?.type === 'bluff_reveal') {
@@ -85,8 +87,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
     .filter(z => !['burn', 'tricks-a', 'tricks-b', 'cleared'].includes(z.id))
     .map(z => ({ id: z.id, name: z.name, isBluffPile: z.isBluffPile }))
 
-  const handlePlayCards = useCallback((cardIds: string[], toZoneId: string) => {
-    send({ type: 'play_cards', cardIds, toZoneId })
+  const handlePlayCards = useCallback((cardIds: string[], toZoneId: string, claim?: { rank: string }) => {
+    send({ type: 'play_cards', cardIds, toZoneId, bluffClaim: claim })
   }, [send])
 
   const handleDraw = useCallback((toZoneId?: string) => {
@@ -176,10 +178,18 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
               R{gameState.roundNumber}
             </span>
             {gameType !== 'cambio' && gameType !== 'blackjack' && (
-              <TopBtn onClick={() => send({ type: 'pass_turn' })}>Pass</TopBtn>
+              <TopBtn
+                onClick={() => !myHasPassed && send({ type: 'pass_turn' })}
+                disabled={myHasPassed}
+              >
+                {gameType === 'bluff' && myHasPassed ? 'Passed' : 'Pass'}
+              </TopBtn>
             )}
             {gameType === 'cambio' && (
               <TopBtn onClick={() => setShowCambioTutorial(true)}>?</TopBtn>
+            )}
+            {gameType === 'bluff' && (
+              <TopBtn onClick={() => setShowBluffTutorial(true)}>?</TopBtn>
             )}
             <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
             {isHost && (
@@ -238,6 +248,15 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                   />
                 ))}
               </div>
+            )}
+
+            {/* Bluff declaration history */}
+            {gameType === 'bluff' && gameState.bluffHistory.length > 0 && (
+              <BluffHistoryLog
+                last={gameState.bluffHistory[gameState.bluffHistory.length - 1]}
+                players={gameState.players}
+                activeRank={gameState.bluffActiveRank}
+              />
             )}
 
             {/* Draw pile */}
@@ -335,6 +354,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             targetZones={playTargets}
             isMyTurn={isMyTurn}
             gameType={gameType ?? undefined}
+            bluffActiveRank={gameState.bluffActiveRank}
           />
         ))}
 
@@ -364,13 +384,16 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         <CambioTutorialModal onClose={() => setShowCambioTutorial(false)} />
       )}
 
+      {showBluffTutorial && (
+        <BluffTutorialModal onClose={() => setShowBluffTutorial(false)} />
+      )}
+
       {gameState.bluffReveal && (
         <BluffRevealModal
           reveal={gameState.bluffReveal}
           players={gameState.players}
-          isHost={isHost}
-          hostName={gameState.players.find(p => p.id === gameState.hostId)?.name ?? 'Host'}
-          onResolve={bluffSucceeded => send({ type: 'resolve_bluff', bluffSucceeded })}
+          myPlayerId={myPlayerId}
+          onResolve={() => send({ type: 'resolve_bluff' })}
         />
       )}
 
@@ -487,85 +510,131 @@ function TurnBanner({ gameState, myPlayerId }: { gameState: GameState; myPlayerI
 /* ── Bluff reveal modal ──────────────────────────────── */
 
 function BluffRevealModal({
-  reveal, players, isHost, hostName, onResolve,
+  reveal, players, myPlayerId, onResolve,
 }: {
   reveal: BluffReveal
   players: Player[]
-  isHost: boolean
-  hostName: string
-  onResolve: (bluffSucceeded: boolean) => void
+  myPlayerId: string
+  onResolve: () => void
 }) {
   const submitter = players.find(p => p.id === reveal.submitterId)
   const caller = players.find(p => p.id === reveal.callerId)
+  const recipient = players.find(p => p.id === reveal.recipientId)
+  const iAmRecipient = reveal.recipientId === myPlayerId
+
+  const resultColor = reveal.bluffSucceeded ? '#f87171' : '#4ade80'
+  const resultBg = reveal.bluffSucceeded ? 'rgba(239,68,68,0.12)' : 'rgba(74,222,128,0.12)'
+  const resultBorder = reveal.bluffSucceeded ? 'rgba(239,68,68,0.3)' : 'rgba(74,222,128,0.3)'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
       style={{ background: 'rgba(0,0,0,0.88)' }}>
-      <div className="flex flex-col items-center gap-5 px-5 py-7 rounded-3xl w-full max-w-sm"
+      <div className="flex flex-col items-center gap-4 px-5 py-6 rounded-3xl w-full max-w-sm"
         style={{ background: 'var(--surface)', border: '1px solid var(--border-hi)' }}>
 
+        {/* Header */}
         <div className="text-center">
           <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--text-muted)' }}>
             Bluff called!
           </p>
           <p className="text-sm" style={{ color: 'var(--text)' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{caller?.name ?? 'Someone'}</span>
-            {' called bluff on '}
+            {' challenged '}
             <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{submitter?.name ?? 'Unknown'}</span>
+            {"'s claim of "}
+            <span style={{ fontWeight: 700, color: 'var(--text)' }}>
+              "{reveal.claimCount} {rankLabel(reveal.claimRank, reveal.claimCount)}"
+            </span>
           </p>
         </div>
 
+        {/* Revealed cards */}
         <div className="flex gap-2 flex-wrap justify-center">
           {reveal.cards.map(card => (
             <Card key={card.id} card={card} size="md" animate="flip" />
           ))}
         </div>
 
-        {isHost ? (
-          <div className="flex flex-col gap-2 w-full">
-            <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-              Who takes the pile?
-            </p>
-            <button
-              onClick={() => onResolve(true)}
-              className="w-full py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-              style={{ background: 'rgba(229,62,62,0.15)', color: '#fc8181', border: '1px solid rgba(229,62,62,0.3)' }}
-            >
-              Bluff! → pile to {submitter?.name ?? 'submitter'}
-            </button>
-            <button
-              onClick={() => onResolve(false)}
-              className="w-full py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-              style={{ background: 'var(--surface-mid)', color: 'var(--text)', border: '1px solid var(--border-hi)' }}
-            >
-              Honest → pile to {caller?.name ?? 'caller'}
-            </button>
-          </div>
-        ) : (
-          <p className="text-sm text-center" style={{ color: 'var(--text-muted)' }}>
-            Waiting for{' '}
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>{hostName}</span>
-            {' '}to decide…
+        {/* Result verdict */}
+        <div className="w-full rounded-2xl px-4 py-3 text-center"
+          style={{ background: resultBg, border: `1px solid ${resultBorder}` }}>
+          <p className="font-black text-base" style={{ color: resultColor }}>
+            {reveal.bluffSucceeded ? '🚨 BLUFF!' : '✅ HONEST!'}
           </p>
-        )}
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            {reveal.bluffSucceeded
+              ? `${submitter?.name ?? 'Submitter'} lied — they pick up the pile`
+              : `${submitter?.name ?? 'Submitter'} was honest — ${caller?.name ?? 'Caller'} picks up the pile`}
+          </p>
+          {iAmRecipient && (
+            <p className="text-xs font-bold mt-1.5" style={{ color: resultColor }}>
+              That's you — you pick up the pile!
+            </p>
+          )}
+        </div>
+
+        {/* Dismiss */}
+        <button
+          onClick={onResolve}
+          className="w-full py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+          style={{ background: 'var(--surface-mid)', color: 'var(--text)', border: '1px solid var(--border-hi)' }}
+        >
+          Got it
+        </button>
       </div>
+    </div>
+  )
+}
+
+/* ── Bluff helpers ───────────────────────────────────────────── */
+
+const RANK_NAMES_FE: Record<string, [string, string]> = {
+  'A': ['Ace', 'Aces'], 'J': ['Jack', 'Jacks'],
+  'Q': ['Queen', 'Queens'], 'K': ['King', 'Kings'], 'JKR': ['Joker', 'Jokers'],
+}
+function rankLabel(rank: string, count: number): string {
+  const pair = RANK_NAMES_FE[rank]
+  if (pair) return count !== 1 ? pair[1] : pair[0]
+  return count !== 1 ? `${rank}s` : rank
+}
+
+function BluffHistoryLog({
+  last, players, activeRank,
+}: {
+  last: GameState['bluffHistory'][number]
+  players: GameState['players']
+  activeRank: string | null
+}) {
+  const lastName = players.find(p => p.id === last.submitterId)?.name ?? '?'
+  return (
+    <div className="fade-in px-4 py-2 rounded-2xl"
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
+        Last play {activeRank ? `· round rank: ${rankLabel(activeRank, 2)}` : ''} ·{' '}
+      </span>
+      <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>
+        {lastName} played {last.claimCount} {rankLabel(last.claimRank, last.claimCount)}
+      </span>
     </div>
   )
 }
 
 /* ── Small helper components ─────────────────────────────────── */
 
-function TopBtn({ children, onClick, accent }: {
-  children: React.ReactNode; onClick: () => void; accent?: boolean
+function TopBtn({ children, onClick, accent, disabled }: {
+  children: React.ReactNode; onClick: () => void; accent?: boolean; disabled?: boolean
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
       style={{
         background: accent ? 'var(--accent-dim)' : 'var(--surface-mid)',
-        color: accent ? 'var(--accent)' : 'var(--text-muted)',
+        color: accent ? 'var(--accent)' : disabled ? 'var(--text-dim)' : 'var(--text-muted)',
         border: '1px solid ' + (accent ? 'rgba(245,158,11,0.3)' : 'var(--border)'),
+        opacity: disabled ? 0.5 : 1,
+        cursor: disabled ? 'default' : 'pointer',
       }}
     >
       {children}

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
-import { CambioTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal } from './CambioTutorial'
 
 const GAMES: {
   type: GameType; label: string; desc: string; icon: string; min: number; max: number
@@ -23,6 +23,7 @@ interface Props {
 
 export function Lobby({ gameState, myPlayerId, send }: Props) {
   const [showCambioTutorial, setShowCambioTutorial] = useState(false)
+  const [showBluffTutorial, setShowBluffTutorial] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
   const isHost = me?.isHost ?? false
   const playerCount = gameState.players.length
@@ -144,6 +145,52 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
         </div>
       )}
 
+      {/* Bluff — how to play (visible to all players) */}
+      {selectedGame === 'bluff' && (
+        <div className="px-4 mb-4">
+          <button
+            onClick={() => setShowBluffTutorial(true)}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 flex items-center justify-center gap-2"
+            style={{
+              background: 'var(--surface)',
+              color: 'var(--text-muted)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <span>📖</span>
+            How to play Bluff
+          </button>
+        </div>
+      )}
+
+      {/* Bluff joker count */}
+      {isHost && selectedGame === 'bluff' && (
+        <Section label="Jokers in Deck">
+          <div className="flex gap-2">
+            {[0, 1, 2, 3, 4].map(count => {
+              const active = gameState.bluffJokers === count
+              return (
+                <button
+                  key={count}
+                  onClick={() => send({ type: 'set_bluff_jokers', count })}
+                  className="flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+                  style={{
+                    background: active ? 'var(--accent-dim)' : 'var(--surface)',
+                    color: active ? 'var(--accent)' : 'var(--text-muted)',
+                    border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                  }}
+                >
+                  {count === 0 ? 'None' : `${count}`}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-dim)' }}>
+            Jokers are wildcards — they count as any rank
+          </p>
+        </Section>
+      )}
+
       {/* Cambio joker count */}
       {isHost && selectedGame === 'cambio' && (
         <Section label="Jokers in Deck">
@@ -254,6 +301,10 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
 
       {showCambioTutorial && (
         <CambioTutorialModal onClose={() => setShowCambioTutorial(false)} />
+      )}
+
+      {showBluffTutorial && (
+        <BluffTutorialModal onClose={() => setShowBluffTutorial(false)} />
       )}
 
       {/* Action */}

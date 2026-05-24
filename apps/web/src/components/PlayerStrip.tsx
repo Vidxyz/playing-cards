@@ -22,6 +22,7 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
       {others.map(player => {
         const isCurrentTurn = currentTurnPlayerId === player.id
         const isNextTurn = nextPlayerId === player.id && !isCurrentTurn
+        const hasPassed = gameState.bluffPassedPlayerIds.includes(player.id)
         const cardCount = gameState.zones
           .filter(z => z.ownerId === player.id)
           .reduce((s, z) => s + z.cards.length, 0)
@@ -33,7 +34,7 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
             style={{
               background: isCurrentTurn ? 'var(--surface-hi)' : 'var(--surface)',
               border: '1px solid ' + (isCurrentTurn ? 'var(--accent)' : isNextTurn ? 'var(--border-hi)' : 'var(--border)'),
-              opacity: !player.isConnected || player.isFolded ? 0.4 : 1,
+              opacity: !player.isConnected || player.isFolded || hasPassed ? 0.4 : 1,
             }}
           >
             <div
@@ -85,13 +86,19 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
               )}
             </div>
 
-            {isCurrentTurn && (
+            {isCurrentTurn && !hasPassed && (
               <span className="text-xs" style={{ color: 'var(--accent)' }}>▶</span>
             )}
-            {isNextTurn && (
+            {isNextTurn && !hasPassed && (
               <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
                 style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
                 next
+              </span>
+            )}
+            {hasPassed && (
+              <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                style={{ background: 'rgba(239,68,68,0.1)', color: '#fc8181', border: '1px solid rgba(239,68,68,0.25)' }}>
+                passed
               </span>
             )}
           </div>

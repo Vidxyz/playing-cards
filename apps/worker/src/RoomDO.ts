@@ -11,6 +11,19 @@ interface Session {
   playerId: string
 }
 
+const RANK_FULL: Record<string, [string, string]> = {
+  'A':   ['Ace',   'Aces'],
+  'J':   ['Jack',  'Jacks'],
+  'Q':   ['Queen', 'Queens'],
+  'K':   ['King',  'Kings'],
+  'JKR': ['Joker', 'Jokers'],
+}
+function rankName(rank: string, count: number): string {
+  const pair = RANK_FULL[rank]
+  if (pair) return count !== 1 ? pair[1] : pair[0]
+  return count !== 1 ? `${rank}s` : rank
+}
+
 function generateRoomCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase()
 }
@@ -69,7 +82,10 @@ export class RoomDO implements DurableObject {
           lastAction: null,
           bluffReveal: null,
           lastBluffBatch: null,
+          bluffActiveRank: null,
+          bluffHistory: [],
           bluffPassCount: 0,
+          bluffPassedPlayerIds: [],
           blackjackDealerId: null,
           cambioDrawn: null,
           cambioPower: null,
@@ -77,6 +93,7 @@ export class RoomDO implements DurableObject {
           cambioFinalRound: false,
           cambioPeekSwapTarget: null,
           cambioJokers: 2,
+          bluffJokers: 0,
         }
         await this.saveState(gs)
         await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS)
@@ -168,7 +185,7 @@ export class RoomDO implements DurableObject {
         return
 
       case 'play_cards':
-        this.handlePlayCards(gs, player, event.cardIds, event.toZoneId, event.claim)
+        this.handlePlayCards(gs, player, event.cardIds, event.toZoneId, event.bluffClaim)
         break
 
       case 'move_card':
@@ -192,19 +209,29 @@ export class RoomDO implements DurableObject {
         return
 
       case 'resolve_bluff':
-        if (!player.isHost) return
-        this.handleResolveBluff(gs, event.bluffSucceeded)
+        this.handleResolveBluff(gs)
         break
 
       case 'pass_turn':
         if (gs.gameType === 'bluff') {
           const bluffZone = gs.zones.find(z => z.isBluffPile)
           if (bluffZone && bluffZone.cards.length > 0 && gs.lastBluffBatch) {
-            gs.bluffPassCount++
-            if (gs.bluffPassCount >= gs.turnOrder.length - 1) {
+            if (!gs.bluffPassedPlayerIds.includes(playerId)) {
+              gs.bluffPassedPlayerIds.push(playerId)
+              gs.bluffPassCount++
+            }
+            // Everyone except the last submitter has passed → fresh round
+            const lastSubmitter = gs.lastBluffBatch.submitterId
+            const activePlayers = gs.turnOrder.filter(id => id !== lastSubmitter)
+            const allPassed = activePlayers.every(id => gs.bluffPassedPlayerIds.includes(id))
+            if (allPassed) {
               this.handleBluffPassClear(gs, playerId)
               break
             }
+            // Advance turn, skipping already-passed players
+            this.advanceTurnSkipPassed(gs)
+            gs.lastAction = { type: 'pass', playerId, timestamp: Date.now() }
+            break
           }
         }
         this.advanceTurn(gs)
@@ -245,6 +272,11 @@ export class RoomDO implements DurableObject {
       case 'set_cambio_jokers':
         if (!player.isHost) return
         gs.cambioJokers = event.count
+        break
+
+      case 'set_bluff_jokers':
+        if (!player.isHost) return
+        gs.bluffJokers = event.count
         break
 
       case 'update_score':
@@ -331,7 +363,10 @@ export class RoomDO implements DurableObject {
         lastAction: null,
         bluffReveal: null,
         lastBluffBatch: null,
+        bluffActiveRank: null,
+        bluffHistory: [],
         bluffPassCount: 0,
+        bluffPassedPlayerIds: [],
         blackjackDealerId: null,
         cambioDrawn: null,
         cambioPower: null,
@@ -339,6 +374,7 @@ export class RoomDO implements DurableObject {
         cambioFinalRound: false,
         cambioPeekSwapTarget: null,
         cambioJokers: 2,
+        bluffJokers: 0,
       }
     }
 
@@ -385,10 +421,12 @@ export class RoomDO implements DurableObject {
 
     gs.phase = 'dealing'
 
-    // Build and shuffle deck (inject joker count for Cambio)
+    // Build and shuffle deck (inject joker count for Cambio and Bluff)
     const deckFilter = gs.gameType === 'cambio'
       ? { ...config.deckFilter, jokerCount: gs.cambioJokers }
-      : config.deckFilter
+      : gs.gameType === 'bluff'
+        ? { ...config.deckFilter, jokerCount: gs.bluffJokers }
+        : config.deckFilter
     const deck = shuffle(buildDeck(deckFilter))
 
     // Build zones from templates
@@ -465,13 +503,16 @@ export class RoomDO implements DurableObject {
     }
   }
 
-  private handlePlayCards(gs: GameState, player: Player, cardIds: string[], toZoneId: string, claim?: string): void {
+  private handlePlayCards(gs: GameState, player: Player, cardIds: string[], toZoneId: string, bluffClaim?: { rank: string }): void {
     const fromZoneId = this.findCardZone(gs, cardIds[0], player.id)
     if (!fromZoneId) return
 
     const fromZone = gs.zones.find(z => z.id === fromZoneId)
     const toZone = gs.zones.find(z => z.id === toZoneId)
     if (!fromZone || !toZone) return
+
+    // Block play if this player has already passed in the current bluff round
+    if (gs.gameType === 'bluff' && toZone.isBluffPile && gs.bluffPassedPlayerIds.includes(player.id)) return
 
     const cards: Card[] = []
     for (const cardId of cardIds) {
@@ -483,8 +524,15 @@ export class RoomDO implements DurableObject {
     toZone.cards.push(...cards)
 
     if (toZone.isBluffPile) {
-      gs.lastBluffBatch = { cardIds: cards.map(c => c.id), submitterId: player.id }
+      // First play of a cycle: use the declared rank; subsequent plays: use active rank
+      const claimRank = gs.bluffActiveRank ?? bluffClaim?.rank ?? ''
+      if (!gs.bluffActiveRank && claimRank) gs.bluffActiveRank = claimRank
+      const claimCount = cards.length
+      toZone.claimLabel = `${claimCount} ${rankName(claimRank, claimCount)}`
+      gs.lastBluffBatch = { cardIds: cards.map(c => c.id), submitterId: player.id, claimRank, claimCount }
+      gs.bluffHistory.push({ submitterId: player.id, claimRank, claimCount })
       gs.bluffPassCount = 0
+      gs.bluffPassedPlayerIds = []
     }
 
     gs.lastAction = {
@@ -571,16 +619,29 @@ export class RoomDO implements DurableObject {
 
     const batch = gs.lastBluffBatch
     if (!batch) return
+    if (player.id === batch.submitterId) return  // can't call bluff on yourself
 
-    // Find the actual cards in the last batch (may have shifted if pile was disturbed)
     const revealedCards = bluffZone.cards.filter(c => batch.cardIds.includes(c.id))
     if (revealedCards.length === 0) return
 
+    // Jokers are wildcards — only rank mismatch matters (count is always truthful)
+    const bluffSucceeded = revealedCards.some(c => c.rank !== 'JKR' && c.rank !== batch.claimRank)
+
+    const recipientId = bluffSucceeded ? batch.submitterId : player.id
+
     gs.bluffReveal = {
-      cards: revealedCards,        // real values — broadcast to everyone
+      cards: revealedCards,
       submitterId: batch.submitterId,
       callerId: player.id,
+      claimRank: batch.claimRank,
+      claimCount: batch.claimCount,
+      bluffSucceeded,
+      recipientId,
     }
+
+    gs.lastBluffBatch = null
+    gs.bluffPassCount = 0
+    gs.bluffPassedPlayerIds = []
 
     gs.lastAction = {
       type: 'bluff_reveal',
@@ -594,29 +655,24 @@ export class RoomDO implements DurableObject {
     await this.broadcastState(gs)
   }
 
-  private handleResolveBluff(gs: GameState, bluffSucceeded: boolean): void {
+  private handleResolveBluff(gs: GameState): void {
     const reveal = gs.bluffReveal
     if (!reveal) return
 
     const bluffZone = gs.zones.find(z => z.isBluffPile)
-    if (!bluffZone) return
-
-    // bluffSucceeded = the caller was RIGHT (submitter was lying)
-    //   → pile goes back to the submitter as punishment
-    // bluffSucceeded = false (caller was wrong, submitter was honest)
-    //   → caller takes the entire pile
-    const recipientId = bluffSucceeded ? reveal.submitterId : reveal.callerId
+    const recipientId = reveal.recipientId
     const handZone = gs.zones.find(z => z.id === `hand-${recipientId}`)
 
-    if (handZone) {
+    if (bluffZone && handZone) {
       handZone.cards.push(...bluffZone.cards)
       bluffZone.cards = []
       bluffZone.claimLabel = null
     }
 
     gs.bluffReveal = null
-    gs.lastBluffBatch = null
-    gs.bluffPassCount = 0
+    gs.bluffActiveRank = null
+    gs.bluffHistory = []
+    gs.currentTurnPlayerId = recipientId  // person who picks up plays next
     gs.lastAction = {
       type: 'move',
       playerId: recipientId,
@@ -635,7 +691,10 @@ export class RoomDO implements DurableObject {
     // Last submitter starts fresh; fall back to first in order if somehow null
     gs.currentTurnPlayerId = gs.lastBluffBatch?.submitterId ?? gs.turnOrder[0] ?? null
     gs.bluffPassCount = 0
+    gs.bluffPassedPlayerIds = []
     gs.lastBluffBatch = null
+    gs.bluffActiveRank = null
+    gs.bluffHistory = []
     gs.lastAction = { type: 'pass', playerId: passingPlayerId, timestamp: Date.now() }
   }
 
@@ -660,7 +719,10 @@ export class RoomDO implements DurableObject {
     gs.lastAction = null
     gs.bluffReveal = null
     gs.lastBluffBatch = null
+    gs.bluffActiveRank = null
+    gs.bluffHistory = []
     gs.bluffPassCount = 0
+    gs.bluffPassedPlayerIds = []
     gs.cambioDrawn = null
     gs.cambioPower = null
     gs.cambioCaller = null
@@ -939,6 +1001,21 @@ export class RoomDO implements DurableObject {
     const idx = gs.turnOrder.indexOf(gs.currentTurnPlayerId ?? '')
     const next = (idx + 1) % gs.turnOrder.length
     gs.currentTurnPlayerId = gs.turnOrder[next]
+  }
+
+  private advanceTurnSkipPassed(gs: GameState): void {
+    if (gs.turnOrder.length === 0) return
+    const passed = new Set(gs.bluffPassedPlayerIds)
+    let idx = gs.turnOrder.indexOf(gs.currentTurnPlayerId ?? '')
+    for (let i = 0; i < gs.turnOrder.length; i++) {
+      idx = (idx + 1) % gs.turnOrder.length
+      if (!passed.has(gs.turnOrder[idx])) {
+        gs.currentTurnPlayerId = gs.turnOrder[idx]
+        return
+      }
+    }
+    // All passed (shouldn't happen if caller checks first), just advance normally
+    gs.currentTurnPlayerId = gs.turnOrder[(idx + 1) % gs.turnOrder.length]
   }
 
   private findCardZone(gs: GameState, cardId: string, playerId: string): string | null {

@@ -1,32 +1,82 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
-import type { Zone, Card as CardType } from '@playing-cards/shared'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import type { Zone, Card as CardType, Rank } from '@playing-cards/shared'
 import { Card } from './Card'
+
+const RANK_ORDER: Record<string, number> = Object.fromEntries(
+  ['2','3','4','5','6','7','8','9','10','J','Q','K','A'].map((r, i) => [r, i])
+)
+const RANK_NAMES: Record<string, [string, string]> = {
+  'A': ['Ace', 'Aces'], 'J': ['Jack', 'Jacks'],
+  'Q': ['Queen', 'Queens'], 'K': ['King', 'Kings'], 'JKR': ['Joker', 'Jokers'],
+}
+function rankLabel(rank: string, count: number): string {
+  const pair = RANK_NAMES[rank]
+  if (pair) return count !== 1 ? pair[1] : pair[0]
+  return count !== 1 ? `${rank}s` : rank
+}
+
+function sortByRank(cards: CardType[]): string[] {
+  return [...cards].sort((a, b) => (RANK_ORDER[a.rank] ?? 99) - (RANK_ORDER[b.rank] ?? 99)).map(c => c.id)
+}
+
+// Rank picker rows shown as actual card visuals
+const PICKER_RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+const PICKER_ROW1: Rank[] = ['A', '2', '3', '4', '5', '6', '7']
+const PICKER_ROW2: Rank[] = ['8', '9', '10', 'J', 'Q', 'K']
 
 interface Props {
   zone: Zone
-  onPlayCards?: (cardIds: string[], toZoneId: string) => void
+  onPlayCards?: (cardIds: string[], toZoneId: string, claim?: { rank: string }) => void
   targetZones: { id: string; name: string; isBluffPile: boolean }[]
   isMyTurn?: boolean
   gameType?: string
+  bluffActiveRank?: string | null
 }
 
-export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType }: Props) {
+export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluffActiveRank }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [targetZoneId, setTargetZoneId] = useState<string>(targetZones[0]?.id || '')
   const [arrangeMode, setArrangeMode] = useState(false)
   const [movingId, setMovingId] = useState<string | null>(null)
-  const [customOrder, setCustomOrder] = useState<string[]>(() => zone.cards.map(c => c.id))
+  const [customOrder, setCustomOrder] = useState<string[]>(() =>
+    gameType === 'bluff' ? sortByRank(zone.cards) : zone.cards.map(c => c.id)
+  )
+  // Bluff declaration
+  const [declaring, setDeclaring] = useState(false)
+  const [claimRank, setClaimRank] = useState<string>('')
+
+  const fanContainerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(320)
+  useEffect(() => {
+    const el = fanContainerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => setContainerWidth(entries[0].contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   useEffect(() => {
-    const serverIds = zone.cards.map(c => c.id)
-    setCustomOrder(prev => {
-      const kept = prev.filter(id => serverIds.includes(id))
-      const added = serverIds.filter(id => !prev.includes(id))
-      return [...kept, ...added]
-    })
-  }, [zone.cards])
+    if (gameType === 'bluff') {
+      setCustomOrder(sortByRank(zone.cards))
+    } else {
+      const serverIds = zone.cards.map(c => c.id)
+      setCustomOrder(prev => {
+        const kept = prev.filter(id => serverIds.includes(id))
+        const added = serverIds.filter(id => !prev.includes(id))
+        return [...kept, ...added]
+      })
+    }
+  }, [zone.cards, gameType])
+
+  // Reset declaration panel when selection changes
+  useEffect(() => {
+    setDeclaring(false)
+    setClaimRank('')
+  }, [selected.size])
+
+  const isBluffTarget = targetZones.find(z => z.id === targetZoneId)?.isBluffPile ?? false
 
   const handleCardTap = useCallback((cardId: string) => {
     if (arrangeMode) {
@@ -58,41 +108,67 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType }: Pro
 
   const handlePlay = useCallback(() => {
     if (selected.size === 0 || !targetZoneId) return
-    onPlayCards?.([...selected], targetZoneId)
+    if (isBluffTarget && !bluffActiveRank) {
+      // First play of cycle — need rank declaration
+      setDeclaring(true)
+      return
+    }
+    // Active rank set, or non-bluff zone — play immediately
+    const claim = isBluffTarget ? { rank: bluffActiveRank! } : undefined
+    onPlayCards?.([...selected], targetZoneId, claim)
     setSelected(new Set())
-  }, [selected, targetZoneId, onPlayCards])
+  }, [selected, targetZoneId, isBluffTarget, bluffActiveRank, onPlayCards])
+
+  const handleDeclareAndPlay = useCallback(() => {
+    if (!claimRank || selected.size === 0) return
+    onPlayCards?.([...selected], targetZoneId, { rank: claimRank })
+    setSelected(new Set())
+    setDeclaring(false)
+    setClaimRank('')
+  }, [claimRank, selected, targetZoneId, onPlayCards])
 
   const orderedCards = customOrder
     .map(id => zone.cards.find(c => c.id === id))
     .filter((c): c is CardType => c !== undefined)
 
   const count = orderedCards.length
-  const overlap = count <= 7 ? 28 : count <= 12 ? 42 : 54
+  const CARD_W = 80
+  // Negative overlap = gaps between cards (spread out); positive = cards overlap (compressed)
+  // Clamp negative side so cards never spread more than 36px apart
+  const rawOverlap = count > 1
+    ? CARD_W - (containerWidth - CARD_W) / (count - 1)
+    : 0
+  const overlap = Math.max(-36, rawOverlap)
+  const fanWidth = count > 0 ? CARD_W + (count > 1 ? (count - 1) * (CARD_W - overlap) : 0) : CARD_W
 
   return (
     <div className="flex flex-col">
       {/* Fan of cards */}
-      <div className="relative overflow-x-auto no-scrollbar px-4 py-2" style={{ minHeight: 136 }}>
-        <div className="flex items-end" style={{ width: count > 0 ? 80 + (count - 1) * (80 - overlap) + 16 : 80 }}>
-          {orderedCards.map((card, i) => (
-            <div
-              key={card.id}
-              className="flex-shrink-0"
-              style={{
-                marginLeft: i === 0 ? 0 : -(overlap),
-                zIndex: (arrangeMode ? movingId === card.id : selected.has(card.id)) ? 100 : i,
-                position: 'relative',
-              }}
-            >
-              <Card
-                card={card}
-                selected={arrangeMode ? movingId === card.id : selected.has(card.id)}
-                animate="deal"
-                size="lg"
-                onClick={() => handleCardTap(card.id)}
-              />
-            </div>
-          ))}
+      <div ref={fanContainerRef} className="relative px-4 py-2" style={{ minHeight: 136 }}>
+        <div className="flex items-end" style={{ width: fanWidth }}>
+          {orderedCards.map((card, i) => {
+            const isSelected = arrangeMode ? movingId === card.id : selected.has(card.id)
+            return (
+              <div
+                key={card.id}
+                className="flex-shrink-0"
+                style={{
+                  marginLeft: i === 0 ? 0 : -(overlap),
+                  // Keep natural z-index ordering so selected cards don't cover adjacent ones
+                  zIndex: i,
+                  position: 'relative',
+                }}
+              >
+                <Card
+                  card={card}
+                  selected={isSelected}
+                  animate="deal"
+                  size="lg"
+                  onClick={() => handleCardTap(card.id)}
+                />
+              </div>
+            )
+          })}
           {count === 0 && (
             <div style={{
               width: 80, height: 116, borderRadius: 'var(--radius-card)',
@@ -125,8 +201,8 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType }: Pro
         )}
       </div>
 
-      {/* Action panel — visible in play mode when cards are selected */}
-      {!arrangeMode && selected.size > 0 && (
+      {/* Action panel */}
+      {!arrangeMode && selected.size > 0 && !declaring && (
         <div className="px-4 pb-2 flex flex-col gap-2 card-slide">
           {targetZones.length > 1 && (
             <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
@@ -153,7 +229,11 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType }: Pro
               className="flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
               style={{ background: 'var(--accent)', color: '#000' }}
             >
-              Play {selected.size} card{selected.size !== 1 ? 's' : ''}
+              {isBluffTarget
+                ? bluffActiveRank
+                  ? `Play ${selected.size} ${rankLabel(bluffActiveRank, selected.size)}`
+                  : `Declare & Play ${selected.size}`
+                : `Play ${selected.size} card${selected.size !== 1 ? 's' : ''}`}
             </button>
             <button
               onClick={() => setSelected(new Set())}
@@ -163,6 +243,73 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType }: Pro
               ✕
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Rank declaration panel — only needed on first play of a cycle */}
+      {!arrangeMode && declaring && (
+        <div className="px-4 pb-3 flex flex-col gap-3 card-slide">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+              Playing {selected.size} — what rank are you claiming?
+            </p>
+            <button
+              onClick={() => setDeclaring(false)}
+              className="text-xs px-2 py-0.5 rounded-full"
+              style={{ color: 'var(--text-dim)', background: 'var(--surface-mid)', border: '1px solid var(--border)' }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Card visual rank picker — 2 rows */}
+          <div className="flex flex-col gap-1.5">
+            {[PICKER_ROW1, PICKER_ROW2].map((row, ri) => (
+              <div key={ri} className="flex gap-1.5">
+                {row.map(r => {
+                  const isActive = claimRank === r
+                  return (
+                    <div
+                      key={r}
+                      onClick={() => setClaimRank(r)}
+                      style={{
+                        cursor: 'pointer',
+                        outline: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                        outlineOffset: 2,
+                        borderRadius: 'var(--radius-card)',
+                        transition: 'outline 0.12s ease',
+                        flex: 1, height: 48,
+                        background: 'white',
+                        border: '1px solid rgba(0,0,0,0.12)',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#111',
+                        fontSize: 13, fontWeight: 700,
+                        userSelect: 'none',
+                      }}
+                    >
+                      {r}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+
+          <button
+            disabled={!claimRank}
+            onClick={handleDeclareAndPlay}
+            className="w-full py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+            style={{
+              background: claimRank ? 'var(--accent)' : 'var(--surface-mid)',
+              color: claimRank ? '#000' : 'var(--text-dim)',
+              cursor: claimRank ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {claimRank
+              ? `Claim "${selected.size} ${rankLabel(claimRank, selected.size)}" & Play`
+              : 'Pick a rank above'}
+          </button>
         </div>
       )}
     </div>

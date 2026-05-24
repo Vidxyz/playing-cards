@@ -6,12 +6,12 @@ export type ClientEvent =
   | { type: 'ready' }
   | { type: 'set_game'; gameType: GameType }
   | { type: 'start_deal' }
-  | { type: 'play_cards'; cardIds: string[]; toZoneId: string; claim?: string }
+  | { type: 'play_cards'; cardIds: string[]; toZoneId: string; bluffClaim?: { rank: string } }
   | { type: 'move_card'; cardId: string; fromZoneId: string; toZoneId: string }
   | { type: 'draw_card'; toZoneId: string }
   | { type: 'flip_card'; cardId: string; zoneId: string }
   | { type: 'call_bluff' }
-  | { type: 'resolve_bluff'; bluffSucceeded: boolean }
+  | { type: 'resolve_bluff' }
   | { type: 'pass_turn' }
   | { type: 'next_round' }
   | { type: 'end_game' }
@@ -30,6 +30,7 @@ export type ClientEvent =
   | { type: 'cambio_power_skip' }
   | { type: 'cambio_stick'; zoneId: string }
   | { type: 'set_cambio_jokers'; count: number }
+  | { type: 'set_bluff_jokers'; count: number }
 
 // Server → Client
 export type ServerEvent =

@@ -51,9 +51,13 @@ export type GamePhase = 'lobby' | 'dealing' | 'playing' | 'round-over' | 'game-o
 export type GameType = 'president' | 'blackjack' | 'poker' | 'euchre' | 'cambio' | 'bluff'
 
 export interface BluffReveal {
-  cards: Card[]         // actual card values — visible to all during resolution
-  submitterId: string   // player who played the last batch
-  callerId: string      // player who called bluff
+  cards: Card[]           // actual card values — visible to all during resolution
+  submitterId: string     // player who played the last batch
+  callerId: string        // player who called bluff
+  claimRank: string       // what was declared
+  claimCount: number      // how many were declared
+  bluffSucceeded: boolean // true = submitter lied → submitter picks up pile
+  recipientId: string     // player who picks up the pile
 }
 
 export interface GameState {
@@ -72,8 +76,11 @@ export interface GameState {
   lastAction: GameAction | null
   // Bluff-specific: set while awaiting host resolution, null otherwise
   bluffReveal: BluffReveal | null
-  lastBluffBatch: { cardIds: string[]; submitterId: string } | null
+  lastBluffBatch: { cardIds: string[]; submitterId: string; claimRank: string; claimCount: number } | null
+  bluffActiveRank: string | null
+  bluffHistory: Array<{ submitterId: string; claimRank: string; claimCount: number }>
   bluffPassCount: number
+  bluffPassedPlayerIds: string[]
   // Blackjack-specific
   blackjackDealerId: string | null
   // Cambio-specific
@@ -83,6 +90,7 @@ export interface GameState {
   cambioFinalRound: boolean
   cambioPeekSwapTarget: { cardId: string; zoneId: string } | null
   cambioJokers: number
+  bluffJokers: number
 }
 
 export interface GameAction {
