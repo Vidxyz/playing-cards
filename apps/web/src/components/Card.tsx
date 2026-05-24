@@ -12,7 +12,7 @@ interface Props {
   faceDown?: boolean
   selected?: boolean
   size?: 'xs' | 'sm' | 'md' | 'lg'
-  animate?: 'deal' | 'flip' | 'slide' | null
+  animate?: 'deal' | 'deal-slow' | 'flip' | 'slide' | null
   onClick?: () => void
   className?: string
   style?: React.CSSProperties
@@ -31,6 +31,7 @@ export function Card({ card, faceDown, selected, size = 'md', animate, onClick, 
   const isRed = !isFaceDown && RED_SUITS.has(card.suit)
 
   const animClass = animate === 'deal' ? 'card-deal'
+    : animate === 'deal-slow' ? 'card-deal-slow'
     : animate === 'flip' ? 'card-flip'
     : animate === 'slide' ? 'card-slide'
     : ''

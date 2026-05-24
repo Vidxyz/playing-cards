@@ -59,10 +59,30 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
                   </span>
                 )}
               </div>
-              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                {player.isFolded ? 'folded' : `${cardCount} card${cardCount !== 1 ? 's' : ''}`}
-                {gameState.gameType === 'euchre' && player.trickCount > 0 && ` · ${player.trickCount}T`}
-              </span>
+              {gameState.gameType === 'bluff' && !player.isFolded && cardCount > 0 ? (
+                <div className="flex items-center gap-0.5 mt-0.5">
+                  {Array.from({ length: Math.min(cardCount, 12) }).map((_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        width: 5, height: 8,
+                        borderRadius: 1,
+                        background: isCurrentTurn ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.2)',
+                        border: '1px solid ' + (isCurrentTurn ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.12)'),
+                        flexShrink: 0,
+                      }}
+                    />
+                  ))}
+                  {cardCount > 12 && (
+                    <span style={{ fontSize: 8, color: 'var(--text-dim)', marginLeft: 2 }}>+{cardCount - 12}</span>
+                  )}
+                </div>
+              ) : (
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  {player.isFolded ? 'folded' : `${cardCount} card${cardCount !== 1 ? 's' : ''}`}
+                  {gameState.gameType === 'euchre' && player.trickCount > 0 && ` · ${player.trickCount}T`}
+                </span>
+              )}
             </div>
 
             {isCurrentTurn && (

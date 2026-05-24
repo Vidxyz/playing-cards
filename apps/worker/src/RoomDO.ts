@@ -619,7 +619,8 @@ export class RoomDO implements DurableObject {
     gs.bluffPassCount = 0
     gs.lastAction = {
       type: 'move',
-      playerId: gs.hostId,
+      playerId: recipientId,
+      fromZoneId: 'bluff-pile',
       toZoneId: `hand-${recipientId}`,
       timestamp: Date.now(),
     }

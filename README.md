@@ -134,21 +134,60 @@ pnpm --filter @playing-cards/web dev
 pnpm --filter @playing-cards/worker dev
 ```
 
-### 5. Open on mobile (local network)
+### 5. Local network testing (multiple devices on the same WiFi)
 
-Wrangler dev binds to `localhost` by default. To test on your phone on the same WiFi:
+By default both servers bind to `localhost` — only your own machine can reach them. To let phones and other devices on the same WiFi connect without any external hosting:
+
+**Step 1 — find your machine's local IP**
 
 ```bash
-# Find your local IP
-ipconfig getifaddr en0   # macOS
-ip route get 1 | awk '{print $7}' | head -1  # Linux
-
-# Then in apps/web/.env.local set:
-NEXT_PUBLIC_WORKER_URL=http://<your-local-ip>:8787
-
-# And start Next.js on all interfaces:
-pnpm --filter @playing-cards/web dev -- --hostname 0.0.0.0
+ipconfig getifaddr en0        # macOS (Wi-Fi)
+ip route get 1 | awk '{print $7}' | head -1   # Linux
 ```
+
+Example result: `192.168.1.42`
+
+**Step 2 — update `apps/web/.env.local`**
+
+```env
+NEXT_PUBLIC_WORKER_URL=http://192.168.1.42:8787
+```
+
+> `NEXT_PUBLIC_*` variables are inlined into the browser bundle. Without this change, other devices would try to connect their own `localhost:8787`, which has nothing running.
+
+**Step 3 — start both servers bound to all interfaces**
+
+Open two terminals:
+
+```bash
+# Terminal 1 — Worker (binds to 0.0.0.0 so network devices can reach it)
+pnpm --filter @playing-cards/worker dev -- --ip 0.0.0.0
+
+# Terminal 2 — Web
+pnpm --filter @playing-cards/web dev -- -H 0.0.0.0
+```
+
+**Step 4 — connect from other devices**
+
+Open `http://192.168.1.42:3000` on any phone or device on the same WiFi network.
+
+**Tip — add `dev:lan` scripts for convenience**
+
+Add these to each `package.json` so you don't need to remember the flags:
+
+`apps/worker/package.json`:
+```json
+"dev:lan": "wrangler dev --ip 0.0.0.0"
+```
+
+`apps/web/package.json`:
+```json
+"dev:lan": "next dev -H 0.0.0.0"
+```
+
+Then run `pnpm dev:lan` in each app directory instead.
+
+> **Remember** to revert `NEXT_PUBLIC_WORKER_URL` back to `http://localhost:8787` for solo development, or keep a separate `.env.lan` file and swap as needed.
 
 ---
 

@@ -8,6 +8,7 @@ import { Zone as ZoneView } from './Zone'
 import { PlayerStrip } from './PlayerStrip'
 import { ScoreBoard } from './ScoreBoard'
 import { Card } from './Card'
+import { CambioTutorialModal } from './CambioTutorial'
 
 interface Props {
   gameState: GameState
@@ -25,15 +26,25 @@ const SUIT_OPTS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs']
 
 export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults, initialPeeks, clearInitialPeeks, onLeave }: Props) {
   const [showScores, setShowScores] = useState(false)
+  const [showCambioTutorial, setShowCambioTutorial] = useState(false)
   const [isBluffRevealing, setIsBluffRevealing] = useState(false)
+  const [pilePickupToast, setPilePickupToast] = useState<{ playerName: string; cardCount: number; isMe: boolean } | null>(null)
+  const [bluffPileFlash, setBluffPileFlash] = useState(false)
+  const bluffPileCountRef = useRef(0)
 
   useEffect(() => {
     if (gameState.phase !== 'round-over') return
     // For Cambio: delay ScoreBoard so the card-flip reveal animation plays first
-    const delay = gameState.gameType === 'cambio' ? 2200 : 0
+    const delay = gameState.gameType === 'cambio' ? 3000 : 0
     const t = setTimeout(() => setShowScores(true), delay)
     return () => clearTimeout(t)
   }, [gameState.phase, gameState.gameType])
+
+  // Track bluff pile size so we can report how many cards were swept up
+  useEffect(() => {
+    const pile = gameState.zones.find(z => z.isBluffPile)
+    if (pile) bluffPileCountRef.current = pile.cards.length
+  }, [gameState.zones])
 
   const me = gameState.players.find(p => p.id === myPlayerId)
   const isHost = me?.isHost ?? false
@@ -47,6 +58,22 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       return () => clearTimeout(t)
     }
   }, [lastAction])
+
+  // Bluff pile pickup animation
+  useEffect(() => {
+    if (!lastAction || lastAction.type !== 'move') return
+    if (lastAction.fromZoneId !== 'bluff-pile') return
+    const recipientId = lastAction.playerId
+    const player = gameState.players.find(p => p.id === recipientId)
+    const playerName = player ? (recipientId === myPlayerId ? 'You' : player.name) : 'Player'
+    const cardCount = bluffPileCountRef.current
+    if (cardCount === 0) return
+    setPilePickupToast({ playerName, cardCount, isMe: recipientId === myPlayerId })
+    setBluffPileFlash(true)
+    const t1 = setTimeout(() => setBluffPileFlash(false), 1200)
+    const t2 = setTimeout(() => setPilePickupToast(null), 3500)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [lastAction, myPlayerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const myHandZones = gameState.zones.filter(z =>
     z.ownerId === myPlayerId &&
@@ -151,6 +178,9 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             {gameType !== 'cambio' && gameType !== 'blackjack' && (
               <TopBtn onClick={() => send({ type: 'pass_turn' })}>Pass</TopBtn>
             )}
+            {gameType === 'cambio' && (
+              <TopBtn onClick={() => setShowCambioTutorial(true)}>?</TopBtn>
+            )}
             <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
             {isHost && (
               <TopBtn onClick={() => send({ type: 'next_round' })} accent>
@@ -204,6 +234,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                     onFlipCard={(cId, zId) => send({ type: 'flip_card', cardId: cId, zoneId: zId })}
                     onCallBluff={zone.isBluffPile ? () => send({ type: 'call_bluff' }) : undefined}
                     isBluffRevealing={isBluffRevealing}
+                    flashWarn={zone.isBluffPile && bluffPileFlash}
                   />
                 ))}
               </div>
@@ -329,6 +360,10 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         />
       )}
 
+      {showCambioTutorial && (
+        <CambioTutorialModal onClose={() => setShowCambioTutorial(false)} />
+      )}
+
       {gameState.bluffReveal && (
         <BluffRevealModal
           reveal={gameState.bluffReveal}
@@ -337,6 +372,35 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           hostName={gameState.players.find(p => p.id === gameState.hostId)?.name ?? 'Host'}
           onResolve={bluffSucceeded => send({ type: 'resolve_bluff', bluffSucceeded })}
         />
+      )}
+
+      {pilePickupToast && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center"
+          onClick={() => setPilePickupToast(null)}
+        >
+          <div
+            className="fade-in flex flex-col items-center gap-2 px-6 py-5 rounded-3xl cursor-pointer"
+            style={{
+              background: 'rgba(0,0,0,0.85)',
+              border: '1.5px solid rgba(239,68,68,0.5)',
+              boxShadow: '0 0 40px rgba(239,68,68,0.25)',
+              backdropFilter: 'blur(8px)',
+              maxWidth: 280,
+            }}
+          >
+            <span style={{ fontSize: 32 }}>🃏</span>
+            <div className="text-center">
+              <div className="font-black text-lg" style={{ color: pilePickupToast.isMe ? '#f87171' : 'var(--text)' }}>
+                {pilePickupToast.playerName}
+              </div>
+              <div className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>
+                sweeps up {pilePickupToast.cardCount} card{pilePickupToast.cardCount !== 1 ? 's' : ''} from the pile
+              </div>
+            </div>
+            <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>tap to dismiss</span>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -776,6 +840,7 @@ function CambioBoard({
   const [swapToast, setSwapToast] = useState<{ message: string } | null>(null)
   const [drawToast, setDrawToast] = useState<{ playerName: string; rank: string; suit: string; power: string | null } | null>(null)
   const gsRef = useRef(gameState)
+  const scoresEverShownRef = useRef(false)
   // Initial peek overlay: 'idle' | 'prepare' | 'revealing'
   const [peekPhase, setPeekPhase] = useState<'idle' | 'prepare' | 'revealing'>('idle')
   const [countdown, setCountdown] = useState(3)
@@ -816,6 +881,11 @@ function CambioBoard({
     const t = setTimeout(() => setPeekCountdown(c => Math.max(0, c - 1)), 1000)
     return () => clearTimeout(t)
   }, [peekCountdown])
+
+  // Latch once scores have been shown so the "Cards Revealed" banner never reappears
+  useEffect(() => {
+    if (showScores) scoresEverShownRef.current = true
+  }, [showScores])
 
   // Clear stick candidate when it becomes your turn
   useEffect(() => {
@@ -933,8 +1003,8 @@ function CambioBoard({
   const handleAnyZoneTap = (zone: Zone, isMine: boolean) => {
     if (!zone.cards[0]) return
 
-    // Non-turn players tap their own face-down cards to attempt a stick
-    if (!isMyTurn && isMine && topDiscard) {
+    // Sticking: available for non-turn players always; for turn player before drawing/using a power
+    if (isMine && topDiscard && (!isMyTurn || (!cambioDrawn && !cambioPower))) {
       if (stickCandidateZone === zone.id) {
         // Second tap = confirm stick
         send({ type: 'cambio_stick', zoneId: zone.id })
@@ -992,8 +1062,8 @@ function CambioBoard({
     cambioPower === 'blind-swap'
   )
 
-  // Can non-turn player initiate stick?
-  const canTapForStick = !isMyTurn && !!topDiscard
+  // Sticking is allowed anytime: non-turn players always; turn player only before drawing/using a power
+  const canTapForStick = !!topDiscard && (!isMyTurn || (!cambioDrawn && !cambioPower))
 
   const instruction = (() => {
     if (!isMyTurn) {
@@ -1011,21 +1081,26 @@ function CambioBoard({
       case 'blind-swap': return blindSwapZone1 ? 'Now tap any card to complete the swap.' : 'Tap any card, then tap another to swap them.'
       case 'peek-swap': return 'Tap any card to peek (Black King power).'
       case 'peek-swap-ready': return 'Tap one of your cards to swap with the peeked card, or skip.'
-      default: return null
+      default: return topDiscard ? (stickCandidateZone ? 'Tap the same card again to confirm your stick!' : 'Tap a card twice to stick, or draw from the deck.') : null
     }
   })()
 
   const isRoundOver = gameState.phase === 'round-over'
 
-  const renderGrid = (zones: Zone[], isMine: boolean, tappable: boolean, size: 'sm' | 'md') => {
+  const renderGrid = (zones: Zone[], isMine: boolean, tappable: boolean, size: 'sm' | 'md', flip = false) => {
     const dim = size === 'sm' ? { w: 40, h: 58 } : { w: 58, h: 86 }
     const maxRow = zones.reduce((max, z) => Math.max(max, z.gridPosition?.row ?? 0), 1)
     const stickTappable = isMine && canTapForStick
+    // Opponents sit across the table — rotate 180° so their bottom-right maps to our top-left
+    const rowOrder = flip
+      ? Array.from({ length: maxRow + 1 }, (_, i) => maxRow - i)
+      : Array.from({ length: maxRow + 1 }, (_, i) => i)
+    const colOrder = flip ? [1, 0] : [0, 1]
     return (
       <div className="flex flex-col gap-1.5">
-        {Array.from({ length: maxRow + 1 }, (_, row) => (
+        {rowOrder.map(row => (
           <div key={row} className="flex gap-1.5">
-            {[0, 1].map(col => {
+            {colOrder.map(col => {
               const zone = zones.find(z => z.gridPosition?.row === row && z.gridPosition?.col === col)
               const card = zone?.cards[0]
               const pr = zone ? getPeek(zone.id) : null
@@ -1063,7 +1138,7 @@ function CambioBoard({
                         card={pr ? { id: pr.cardId, rank: pr.rank as any, suit: pr.suit as any } : card}
                         faceDown={!pr && zone?.visibility !== 'face-up'}
                         size={size}
-                        animate={pr ? 'flip' : isRoundOver && zone?.visibility === 'face-up' ? 'flip' : isSwapped ? 'deal' : undefined}
+                        animate={pr ? 'flip' : isRoundOver && zone?.visibility === 'face-up' ? 'flip' : isSwapped ? 'deal-slow' : undefined}
                       />
                       {pr && peekCountdown > 0 && (
                         <div style={{
@@ -1128,7 +1203,7 @@ function CambioBoard({
                   style={{ color: isActive ? 'var(--accent)' : 'var(--text-muted)' }}>
                   {player.name}{isActive ? ' ▶' : ''}
                 </span>
-                {renderGrid(pZones, false, opponentZoneTappable, 'sm')}
+                {renderGrid(pZones, false, opponentZoneTappable, 'sm', true)}
               </div>
             )
           })}
@@ -1177,7 +1252,7 @@ function CambioBoard({
               transition: 'box-shadow 0.15s ease, outline 0.15s ease',
             }}>
               {topDiscard ? (
-                <Card card={topDiscard} size="md" animate={discardFlash ? 'deal' : undefined} />
+                <Card card={topDiscard} size="md" animate={stickFlip ? 'flip' : discardFlash ? 'deal' : undefined} />
               ) : (
                 <div style={{ width: 58, height: 86, borderRadius: 'var(--radius-card)', border: '1.5px dashed rgba(255,255,255,0.1)' }} />
               )}
@@ -1217,8 +1292,8 @@ function CambioBoard({
         )}
       </div>
 
-      {/* My 2×2 grid */}
-      <div className="flex flex-col items-center gap-2">
+      {/* My 2×2 grid — spacer pushes cards above the fixed score sheet when it's open */}
+      <div className="flex flex-col items-center gap-2" style={{ paddingBottom: showScores ? 300 : 0, transition: 'padding-bottom 0.2s ease' }}>
         <span className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>Your Cards</span>
         {renderGrid(myZones, true, myZoneTappable, 'md')}
       </div>
@@ -1248,7 +1323,7 @@ function CambioBoard({
       {/* ── Draw toast: who drew what + power ── */}
       {drawToast && !stickToast && !powerSwapToast && (
         <div
-          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-0.5 px-5 py-3 rounded-2xl shadow-xl"
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-0.5 px-5 py-3 rounded-2xl shadow-xl cursor-pointer"
           style={{
             background: 'rgba(30,30,40,0.92)',
             border: '1.5px solid rgba(255,255,255,0.1)',
@@ -1256,16 +1331,20 @@ function CambioBoard({
             animation: 'fadeIn 0.2s ease-out both',
             minWidth: 180,
           }}
+          onClick={() => setDrawToast(null)}
         >
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-sm" style={{ color: 'var(--text)' }}>
-              {drawToast.playerName}
-            </span>
-            <span className="font-black text-base" style={{
-              color: (drawToast.suit === 'hearts' || drawToast.suit === 'diamonds') ? '#f87171' : 'var(--text)',
-            }}>
-              {drawToast.rank === 'JKR' ? 'Joker' : drawToast.rank}{SUIT_SYMBOL[drawToast.suit]}
-            </span>
+          <div className="flex items-center gap-2 w-full justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm" style={{ color: 'var(--text)' }}>
+                {drawToast.playerName}
+              </span>
+              <span className="font-black text-base" style={{
+                color: (drawToast.suit === 'hearts' || drawToast.suit === 'diamonds') ? '#f87171' : 'var(--text)',
+              }}>
+                {drawToast.rank === 'JKR' ? 'Joker' : drawToast.rank}{SUIT_SYMBOL[drawToast.suit]}
+              </span>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--text-dim)', marginLeft: 8 }}>✕</span>
           </div>
           {drawToast.power ? (
             <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
@@ -1280,7 +1359,7 @@ function CambioBoard({
       {/* ── Stick result toast ── */}
       {stickToast && (
         <div
-          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl"
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl cursor-pointer"
           style={{
             background: stickToast.success ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
             border: `1.5px solid ${stickToast.success ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)'}`,
@@ -1288,18 +1367,20 @@ function CambioBoard({
             backdropFilter: 'blur(8px)',
             animation: 'fadeIn 0.2s ease-out both',
           }}
+          onClick={() => setStickToast(null)}
         >
           <span style={{ fontSize: 18 }}>{stickToast.success ? '✓' : '✗'}</span>
           <span>
             {stickToast.playerName} — {stickToast.success ? 'Stick!' : 'Wrong! +1 card'}
           </span>
+          <span style={{ fontSize: 11, color: 'currentColor', opacity: 0.5, marginLeft: 4 }}>✕</span>
         </div>
       )}
 
       {/* ── Drawn-card swap toast ── */}
       {swapToast && !stickToast && !powerSwapToast && (
         <div
-          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl"
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl cursor-pointer"
           style={{
             background: 'rgba(74,222,128,0.1)',
             border: '1.5px solid rgba(74,222,128,0.5)',
@@ -1307,16 +1388,18 @@ function CambioBoard({
             backdropFilter: 'blur(8px)',
             animation: 'fadeIn 0.2s ease-out both',
           }}
+          onClick={() => setSwapToast(null)}
         >
           <span style={{ fontSize: 18 }}>⇄</span>
           <span>{swapToast.message}</span>
+          <span style={{ fontSize: 11, color: 'currentColor', opacity: 0.5, marginLeft: 4 }}>✕</span>
         </div>
       )}
 
       {/* ── Power swap toast (J/Q/Black K) — personalized per player ── */}
       {powerSwapToast && !stickToast && (
         <div
-          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl"
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl cursor-pointer"
           style={{
             background: 'rgba(139,92,246,0.15)',
             border: '1.5px solid rgba(139,92,246,0.6)',
@@ -1324,14 +1407,16 @@ function CambioBoard({
             backdropFilter: 'blur(8px)',
             animation: 'fadeIn 0.2s ease-out both',
           }}
+          onClick={() => setPowerSwapToast(null)}
         >
           <span style={{ fontSize: 18 }}>⇄</span>
           <span>{powerSwapToast.message}</span>
+          <span style={{ fontSize: 11, color: 'currentColor', opacity: 0.5, marginLeft: 4 }}>✕</span>
         </div>
       )}
 
       {/* ── Round-over card reveal banner ── */}
-      {isRoundOver && !showScores && peekPhase === 'idle' && (
+      {isRoundOver && !showScores && !scoresEverShownRef.current && peekPhase === 'idle' && (
         <div
           className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-2 px-8 py-5 rounded-3xl shadow-2xl"
           style={{

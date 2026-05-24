@@ -16,11 +16,10 @@ export function ScoreBoard({ gameState, onClose, onNextRound, onEndGame, isHost 
   const isRoundOver = phase === 'round-over'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+    <div className="fixed bottom-0 inset-x-0 z-50 flex justify-center">
       <div
         className="border-t border-white/10 rounded-t-3xl w-full max-w-md p-6 card-slide"
         style={{ background: 'var(--surface)' }}
-        onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-lg" style={{ color: 'var(--text)' }}>

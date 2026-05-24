@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
+import { CambioTutorialModal } from './CambioTutorial'
 
 const GAMES: {
   type: GameType; label: string; desc: string; icon: string; min: number; max: number
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function Lobby({ gameState, myPlayerId, send }: Props) {
+  const [showCambioTutorial, setShowCambioTutorial] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
   const isHost = me?.isHost ?? false
   const playerCount = gameState.players.length
@@ -122,6 +124,24 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
             })}
           </div>
         </Section>
+      )}
+
+      {/* Cambio — how to play (visible to all players) */}
+      {selectedGame === 'cambio' && (
+        <div className="px-4 mb-4">
+          <button
+            onClick={() => setShowCambioTutorial(true)}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 flex items-center justify-center gap-2"
+            style={{
+              background: 'var(--surface)',
+              color: 'var(--text-muted)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <span>📖</span>
+            How to play Cambio
+          </button>
+        </div>
       )}
 
       {/* Cambio joker count */}
@@ -232,6 +252,10 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
         </Section>
       )}
 
+      {showCambioTutorial && (
+        <CambioTutorialModal onClose={() => setShowCambioTutorial(false)} />
+      )}
+
       {/* Action */}
       <div className="px-4 pb-10 pt-2">
         {isHost ? (
@@ -277,3 +301,4 @@ function Section({ label, children }: { label: string; children: React.ReactNode
     </div>
   )
 }
+

@@ -12,9 +12,10 @@ interface Props {
   onCallBluff?: () => void
   isBluffRevealing?: boolean
   compact?: boolean
+  flashWarn?: boolean
 }
 
-export function Zone({ zone, playerId, lastAction, onDraw, onFlipCard, onCallBluff, isBluffRevealing, compact }: Props) {
+export function Zone({ zone, playerId, lastAction, onDraw, onFlipCard, onCallBluff, isBluffRevealing, compact, flashWarn }: Props) {
   const topCard = zone.cards[zone.cards.length - 1]
   const count = zone.cards.length
   const size = compact ? 'sm' : 'lg'
@@ -45,7 +46,15 @@ export function Zone({ zone, playerId, lastAction, onDraw, onFlipCard, onCallBlu
       {/* Card stack */}
       <div
         className="relative"
-        style={{ width: compact ? 40 : 80, height: compact ? 58 : 116 }}
+        style={{
+          width: compact ? 40 : 80,
+          height: compact ? 58 : 116,
+          borderRadius: 'var(--radius-card)',
+          outline: flashWarn ? '2px solid rgba(239,68,68,0.8)' : undefined,
+          outlineOffset: flashWarn ? '3px' : undefined,
+          boxShadow: flashWarn ? '0 0 20px rgba(239,68,68,0.5)' : undefined,
+          transition: 'outline 0.2s ease, box-shadow 0.2s ease',
+        }}
         onClick={onDraw}
       >
         {count === 0 ? (

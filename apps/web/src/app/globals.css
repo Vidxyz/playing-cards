@@ -65,7 +65,8 @@ html, body {
   50%       { box-shadow: 0 0 0 5px rgba(245,158,11,0);   }
 }
 
-.card-deal  { animation: dealIn  0.32s cubic-bezier(0.22,1,0.36,1) both; }
+.card-deal      { animation: dealIn  0.32s cubic-bezier(0.22,1,0.36,1) both; }
+.card-deal-slow { animation: dealIn  1.3s  cubic-bezier(0.22,1,0.36,1) both; }
 .card-flip  { animation: flipIn  0.22s ease-out both; }
 .card-slide { animation: slideUp 0.18s ease-out both; }
 .fade-in    { animation: fadeIn  0.2s ease-out both; }
