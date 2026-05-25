@@ -318,7 +318,7 @@ export function PresidentTutorialModal({ onClose }: { onClose: () => void }) {
               <Row label="💀 Bum (last)" desc="Last to empty hand. Must give their best card(s) to the President." />
             </div>
             <p className="text-[11px] mt-2" style={{ color: 'var(--text-dim)' }}>
-              Card exchange is automatic at the start of each round. The President always goes first.
+              Card exchange is automatic at the start of each round. The Bum starts each subsequent round — first round is random.
             </p>
           </TutSection>
 

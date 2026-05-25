@@ -151,6 +151,19 @@ html, body {
   50%       { box-shadow: 0 0 0 7px rgba(239,68,68,0);   }
 }
 
+@keyframes exchange-pulse {
+  0%, 100% {
+    box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 80%, transparent),
+                0 0 40px color-mix(in srgb, var(--accent) 40%, transparent),
+                inset 0 0 14px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 32px var(--accent),
+                0 0 72px color-mix(in srgb, var(--accent) 70%, transparent),
+                inset 0 0 24px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+}
+
 .card-deal      { animation: dealIn   0.32s cubic-bezier(0.22,1,0.36,1) both; }
 .card-deal-slow { animation: dealIn   1.3s  cubic-bezier(0.22,1,0.36,1) both; }
 .card-flip  { animation: flipIn   0.22s ease-out both; }
@@ -159,6 +172,7 @@ html, body {
 .turn-pulse { animation: pulse-glow 1.6s ease infinite; }
 .bust-pop   { animation: bust-pop  0.45s cubic-bezier(0.22,1,0.36,1) both; }
 .red-pulse  { animation: red-pulse 1s   ease infinite; }
+.exchange-pulse { animation: exchange-pulse 1.4s ease infinite; }
 
 /* ── Utilities ───────────────────────────────────────────────── */
 

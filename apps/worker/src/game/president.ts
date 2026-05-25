@@ -43,8 +43,9 @@ export interface PresidentCombo {
 /**
  * Parse a set of cards into a PresidentCombo for comparison.
  * Returns null if the combo is structurally invalid.
+ * overrideRank is only honoured when all cards are wildcards (3s).
  */
-export function parseCombo(cards: Card[]): PresidentCombo | null {
+export function parseCombo(cards: Card[], overrideRank?: string): PresidentCombo | null {
   if (cards.length === 0) return null
 
   // Joker must be alone
@@ -63,9 +64,10 @@ export function parseCombo(cards: Card[]): PresidentCombo | null {
   // No mixing 2s with normal/wild cards
   if (cards.some(isTwo)) return null
 
-  // Normal / wildcard combo — derive rank from non-wild cards
-  const rank = nonWildRank(cards)
-  if (!rank) return null  // all wildcards — undefined rank
+  // Normal / wildcard combo — derive rank from non-wild cards; fall back to
+  // client-supplied overrideRank only when every card is a wildcard (3).
+  const rank = nonWildRank(cards) ?? overrideRank ?? null
+  if (!rank) return null  // all wildcards with no override — undefined rank
 
   // All non-wild cards must share the same rank
   if (!cards.filter(c => !isWild(c)).every(c => c.rank === rank)) return null
@@ -84,8 +86,17 @@ export function comboBeats(a: PresidentCombo, b: PresidentCombo | null): boolean
   if (!b) return true          // empty table
   if (a.rank === 'JKR') return true  // joker beats everything
 
-  // 2s bypass rank; need exactly max(1, b.count-1) of them
+  // 2s: behaviour depends on what's on the table
   if (a.rank === '2') {
+    if (b.rank === '2') {
+      // 2 vs 2: same count, higher suit (suit burn rules apply)
+      if (a.count !== b.count) return false
+      const sv_a = SUIT_VALUE[a.maxSuit], sv_b = SUIT_VALUE[b.maxSuit]
+      if (sv_a > sv_b) return true
+      if (sv_a < sv_b) return false
+      return !a.maxSuitIsWild && b.maxSuitIsWild
+    }
+    // 2 vs normal: need exactly max(1, b.count-1) twos
     return a.count === Math.max(1, b.count - 1)
   }
 

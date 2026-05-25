@@ -49,6 +49,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const [pilePickupToast, setPilePickupToast] = useState<{ playerName: string; cardCount: number; isMe: boolean } | null>(null)
   const [bluffPileFlash, setBluffPileFlash] = useState(false)
   const [showDoubleDeckToast, setShowDoubleDeckToast] = useState(false)
+  const [exchangeBannerReady, setExchangeBannerReady] = useState(false)
+  const exchangeBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bluffPileCountRef = useRef(0)
 
   useEffect(() => {
@@ -78,11 +80,16 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const presidentExchangeEntry = gameState.presidentExchangePhase?.find(e => e.playerId === myPlayerId && !e.done) ?? null
   const isInExchangePhase = presidentExchangeEntry !== null
   const exchangePhaseActive = gameState.presidentExchangePhase !== null
+  // Burn in progress: pile still has cards from a burn play — block all plays until cleared
+  const burnInProgress = gameType === 'president'
+    && gameState.lastAction?.claim === 'burn'
+    && gameState.presidentCombo !== null
+
   // Enable hand only on your turn, or when it's your discard/exchange to make
   const handIsMyTurn = gameType === 'president'
-    ? isInExchangePhase
+    ? !burnInProgress && (isInExchangePhase
       || isInDiscardPhase
-      || (!exchangePhaseActive && !discardPhaseActive && isMyTurn && !presidentHasPassed && !presidentHasFinished)
+      || (!exchangePhaseActive && !discardPhaseActive && isMyTurn && !presidentHasPassed && !presidentHasFinished))
     : isMyTurn
 
   useEffect(() => {
@@ -92,6 +99,22 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       return () => clearTimeout(t)
     }
   }, [lastAction])
+
+  // Show exchange banner only after the "Cards Received" overlay has auto-dismissed (3.5s)
+  useEffect(() => {
+    if (isInExchangePhase) {
+      exchangeBannerTimerRef.current = setTimeout(() => setExchangeBannerReady(true), 3500)
+    } else {
+      setExchangeBannerReady(false)
+      if (exchangeBannerTimerRef.current) {
+        clearTimeout(exchangeBannerTimerRef.current)
+        exchangeBannerTimerRef.current = null
+      }
+    }
+    return () => {
+      if (exchangeBannerTimerRef.current) clearTimeout(exchangeBannerTimerRef.current)
+    }
+  }, [isInExchangePhase])
 
   // Double-deck toast for President
   useEffect(() => {
@@ -129,8 +152,12 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
     .map(z => ({ id: z.id, name: z.name, isBluffPile: z.isBluffPile }))
 
   const handlePlayCards = useCallback((cardIds: string[], toZoneId: string, claim?: { rank: string }) => {
-    send({ type: 'play_cards', cardIds, toZoneId, bluffClaim: claim })
-  }, [send])
+    if (gameType === 'president') {
+      send({ type: 'play_cards', cardIds, toZoneId, wildRank: claim?.rank })
+    } else {
+      send({ type: 'play_cards', cardIds, toZoneId, bluffClaim: claim })
+    }
+  }, [send, gameType])
 
   const handleRunDiscard = useCallback((cardIds: string[]) => {
     send({ type: 'president_run_discard', cardIds })
@@ -534,26 +561,50 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           </>
         )}
 
-        {myHandZones.map(zone => (
-          <Hand
-            key={zone.id}
-            zone={zone}
-            onPlayCards={isInExchangePhase
-              ? (cardIds) => handleExchangeReturn(cardIds)
-              : isInDiscardPhase
-                ? (cardIds) => handleRunDiscard(cardIds)
-                : handlePlayCards}
-            targetZones={playTargets}
-            isMyTurn={handIsMyTurn}
-            gameType={gameType ?? undefined}
-            bluffActiveRank={gameState.bluffActiveRank}
-            playLabel={isInExchangePhase
-              ? `Return`
-              : isInDiscardPhase
-                ? 'Discard'
-                : undefined}
-          />
-        ))}
+        {isInExchangePhase && exchangeBannerReady && (
+          <div
+            className="exchange-pulse mx-4 mb-1 py-2.5 px-4 rounded-xl flex items-center justify-center gap-2"
+            style={{
+              background: 'var(--accent)',
+              border: '2px solid var(--accent-hi)',
+            }}
+          >
+            <span style={{ fontSize: 18 }}>👇</span>
+            <span style={{ color: '#000', fontWeight: 900, fontSize: 14, letterSpacing: '0.04em' }}>
+              Select {presidentExchangeEntry?.cardsOwed ?? '?'} card{(presidentExchangeEntry?.cardsOwed ?? 1) !== 1 ? 's' : ''} to return
+            </span>
+          </div>
+        )}
+
+        <div
+          className={isInExchangePhase && exchangeBannerReady ? 'exchange-pulse' : ''}
+          style={isInExchangePhase && exchangeBannerReady ? {
+            borderRadius: 16,
+            border: '2.5px solid var(--accent)',
+          } : {}}
+        >
+          {myHandZones.map(zone => (
+            <Hand
+              key={zone.id}
+              zone={zone}
+              onPlayCards={isInExchangePhase
+                ? (cardIds) => handleExchangeReturn(cardIds)
+                : isInDiscardPhase
+                  ? (cardIds) => handleRunDiscard(cardIds)
+                  : handlePlayCards}
+              targetZones={playTargets}
+              isMyTurn={handIsMyTurn}
+              gameType={gameType ?? undefined}
+              bluffActiveRank={gameState.bluffActiveRank}
+              playLabel={isInExchangePhase
+                ? `Return`
+                : isInDiscardPhase
+                  ? 'Discard'
+                  : undefined}
+              highlightCardIds={isInExchangePhase ? (presidentExchangeEntry?.receivedCardIds ?? []) : []}
+            />
+          ))}
+        </div>
 
         {/* Extra actions */}
         <div className="flex gap-2 justify-center px-4 pt-1 pb-2">

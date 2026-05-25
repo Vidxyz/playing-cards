@@ -6,7 +6,7 @@ export type ClientEvent =
   | { type: 'ready' }
   | { type: 'set_game'; gameType: GameType }
   | { type: 'start_deal' }
-  | { type: 'play_cards'; cardIds: string[]; toZoneId: string; bluffClaim?: { rank: string } }
+  | { type: 'play_cards'; cardIds: string[]; toZoneId: string; bluffClaim?: { rank: string }; wildRank?: string }
   | { type: 'move_card'; cardId: string; fromZoneId: string; toZoneId: string }
   | { type: 'draw_card'; toZoneId: string }
   | { type: 'flip_card'; cardId: string; zoneId: string }

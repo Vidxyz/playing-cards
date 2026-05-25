@@ -54,7 +54,7 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
 
   // Exchange phase animation: show overlay when cards arrive
   const [exchangeOverlay, setExchangeOverlay] = useState(false)
-  const exchangeWasActiveRef = useRef(false)
+  const lastShownExchangeRoundRef = useRef(-1)
   const exchangeOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -94,17 +94,20 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
 
   useEffect(() => {
     const active = gameState.presidentExchangePhase !== null
-    if (active && !exchangeWasActiveRef.current) {
-      exchangeWasActiveRef.current = true
+    const round = gameState.roundNumber
+    if (active && lastShownExchangeRoundRef.current !== round) {
+      lastShownExchangeRoundRef.current = round
       setExchangeOverlay(true)
+      // Dismiss any lingering finish banner — the exchange overlay takes priority
+      setFinishBanner(null)
+      if (finishTimerRef.current) { clearTimeout(finishTimerRef.current); finishTimerRef.current = null }
       if (exchangeOverlayTimerRef.current) clearTimeout(exchangeOverlayTimerRef.current)
       exchangeOverlayTimerRef.current = setTimeout(() => {
         setExchangeOverlay(false)
         exchangeOverlayTimerRef.current = null
       }, 3500)
     }
-    if (!active) exchangeWasActiveRef.current = false
-  }, [gameState.presidentExchangePhase])
+  }, [gameState.presidentExchangePhase, gameState.roundNumber])
 
   useEffect(() => {
     const idx = gameState.presidentFinishOrder.indexOf(myPlayerId)
@@ -114,6 +117,11 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
     }
     if (idx === prevFinishIdxRef.current) return
     prevFinishIdxRef.current = idx
+
+    // Don't show finish banner when exchange phase is active: the exchange overlay covers
+    // this moment, and on page refresh prevFinishIdxRef resets to -1 which would spuriously
+    // re-fire the banner from the previous round's finish data.
+    if (gameState.presidentExchangePhase !== null) return
 
     const totalPlayers = gameState.players.length
     let role: string | null = null
@@ -126,16 +134,19 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
       setFinishBanner(null)
       finishTimerRef.current = null
     }, 3500)
-  }, [gameState.presidentFinishOrder, myPlayerId, gameState.players.length])
+  }, [gameState.presidentFinishOrder, myPlayerId, gameState.players.length, gameState.presidentExchangePhase])
 
   const combo = gameState.presidentCombo
   const playPile = gameState.zones.find(z => z.id === 'play-pile')
-  const otherPlayers = gameState.players.filter(p => p.id !== myPlayerId)
+  const allPlayers = gameState.players
   const discardPhase = gameState.presidentDiscardPhase
   const myDiscardEntry = discardPhase?.find(d => d.playerId === myPlayerId && !d.done) ?? null
   const exchangePhase = gameState.presidentExchangePhase
   const myExchangeEntry = exchangePhase?.find(e => e.playerId === myPlayerId) ?? null
   const iAmGiver = exchangePhase?.some(e => e.recipientId === myPlayerId) ?? false
+
+  const isFirstRound = Object.keys(gameState.presidentRoles).length === 0
+  const roleFor = (pid: string) => isFirstRound ? 'neutral' : (gameState.presidentRoles[pid] ?? 'neutral')
 
   if (gameState.phase === 'round-over') {
     return (
@@ -149,8 +160,31 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
     )
   }
 
+  const myRole = roleFor(myPlayerId)
+  const myRoleLabel = ROLE_LABEL[myRole] ?? myRole
+
   return (
     <div className="flex flex-col w-full gap-3">
+
+      {/* Self role chip */}
+      <div className="flex justify-center">
+        <span
+          className="text-xs font-bold px-3 py-1 rounded-full"
+          style={{
+            background: myRole === 'president' ? 'rgba(245,158,11,0.15)'
+              : myRole === 'bum' ? 'rgba(239,68,68,0.1)'
+              : 'var(--surface-mid)',
+            color: myRole === 'president' ? 'var(--accent)'
+              : myRole === 'bum' ? '#f87171'
+              : 'var(--text-muted)',
+            border: '1px solid ' + (myRole === 'president' ? 'rgba(245,158,11,0.3)'
+              : myRole === 'bum' ? 'rgba(239,68,68,0.25)'
+              : 'var(--border)'),
+          }}
+        >
+          {myRoleLabel}
+        </span>
+      </div>
 
       {burnFlash && (
         <div
@@ -185,21 +219,21 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
         <div
           className="w-full rounded-xl px-4 py-3 fade-in"
           style={{
-            background: 'rgba(139,92,246,0.08)',
-            border: '1.5px solid rgba(139,92,246,0.35)',
+            background: 'var(--accent-dim)',
+            border: '1.5px solid color-mix(in srgb, var(--accent) 35%, transparent)',
           }}
         >
-          <p className="text-xs font-black tracking-widest text-center mb-1" style={{ color: '#a78bfa' }}>
+          <p className="text-xs font-black tracking-widest text-center mb-1" style={{ color: 'var(--accent)' }}>
             🔄 CARD EXCHANGE
           </p>
           {myExchangeEntry && !myExchangeEntry.done ? (
             <>
               <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-                You received <span style={{ color: '#a78bfa', fontWeight: 700 }}>{myExchangeEntry.receivedCardIds.length}</span> card{myExchangeEntry.receivedCardIds.length !== 1 ? 's' : ''} from the{' '}
+                You received <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{myExchangeEntry.receivedCardIds.length}</span> card{myExchangeEntry.receivedCardIds.length !== 1 ? 's' : ''} from the{' '}
                 <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{myExchangeEntry.giverRole === 'vb' ? 'Vice Bum' : 'Bum'}</span>.
               </p>
-              <p className="text-xs text-center mt-1" style={{ color: '#a78bfa', fontWeight: 700 }}>
-                Select {myExchangeEntry.cardsOwed} card{myExchangeEntry.cardsOwed !== 1 ? 's' : ''} to return ↓
+              <p className="text-sm text-center mt-2 font-black tracking-wide" style={{ color: 'var(--accent)' }}>
+                👇 Select {myExchangeEntry.cardsOwed} card{myExchangeEntry.cardsOwed !== 1 ? 's' : ''} to return
               </p>
             </>
           ) : iAmGiver ? (
@@ -218,9 +252,9 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
               return (
                 <span key={e.playerId} className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
                   style={{
-                    background: e.done ? 'rgba(139,92,246,0.1)' : 'var(--surface-mid)',
-                    color: e.done ? '#a78bfa' : 'var(--text-muted)',
-                    border: '1px solid ' + (e.done ? 'rgba(139,92,246,0.3)' : 'var(--border)'),
+                    background: e.done ? 'var(--accent-dim)' : 'var(--surface-mid)',
+                    color: e.done ? 'var(--accent)' : 'var(--text-muted)',
+                    border: '1px solid ' + (e.done ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : 'var(--border)'),
                     textDecoration: e.done ? 'line-through' : 'none',
                   }}>
                   {p?.id === myPlayerId ? 'You' : (p?.name ?? '?')}{e.done ? ' ✓' : ''}
@@ -272,25 +306,26 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
         </div>
       )}
 
-      {/* Opponents */}
-      {otherPlayers.length > 0 && (
+      {/* All players */}
+      {allPlayers.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          {otherPlayers.map(player => {
+          {allPlayers.map(player => {
+            const isMe = player.id === myPlayerId
             const isActive = gameState.currentTurnPlayerId === player.id
             const hasPassed = gameState.presidentPassedIds.includes(player.id)
             const finishIdx = gameState.presidentFinishOrder.indexOf(player.id)
             const hasFinished = finishIdx !== -1
             const handZone = gameState.zones.find(z => z.id === `hand-${player.id}`)
             const cardCount = handZone?.cards.length ?? 0
-            const role = gameState.presidentRoles[player.id]
+            const role = roleFor(player.id)
 
             return (
               <div
                 key={player.id}
                 className="flex items-center justify-between px-3 py-2 rounded-xl"
                 style={{
-                  background: isActive ? 'rgba(245,158,11,0.08)' : 'var(--surface)',
-                  border: '1px solid ' + (isActive ? 'rgba(245,158,11,0.4)' : 'var(--border)'),
+                  background: isActive ? 'rgba(245,158,11,0.08)' : isMe ? 'var(--accent-dim)' : 'var(--surface)',
+                  border: '1px solid ' + (isActive ? 'rgba(245,158,11,0.4)' : isMe ? 'color-mix(in srgb, var(--accent) 25%, transparent)' : 'var(--border)'),
                   opacity: hasFinished ? 0.6 : 1,
                 }}
               >
@@ -298,21 +333,19 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
                   <div
                     className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0"
                     style={{
-                      background: isActive ? 'var(--accent)' : 'var(--surface-mid)',
-                      color: isActive ? '#000' : 'var(--text-muted)',
+                      background: isActive ? 'var(--accent)' : isMe ? 'color-mix(in srgb, var(--accent) 30%, var(--surface-mid))' : 'var(--surface-mid)',
+                      color: isActive ? '#000' : isMe ? 'var(--accent)' : 'var(--text-muted)',
                     }}
                   >
                     {player.name.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="flex flex-col leading-none">
-                    <span className="text-sm font-semibold" style={{ color: isActive ? 'var(--accent)' : 'var(--text)' }}>
-                      {player.name}{isActive ? ' ▶' : ''}
+                    <span className="text-sm font-semibold" style={{ color: isActive ? 'var(--accent)' : isMe ? 'var(--accent)' : 'var(--text)' }}>
+                      {isMe ? 'You' : player.name}{isActive ? ' ▶' : ''}
                     </span>
-                    {role && (
-                      <span className="text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
-                        {ROLE_LABEL[role] ?? role}
-                      </span>
-                    )}
+                    <span className="text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                      {ROLE_LABEL[role] ?? role}
+                    </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -372,16 +405,40 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
                   width: CARD_W + (count - 1) * OX,
                   height: CARD_H + (count - 1) * OY,
                 }}>
-                  {playPile.cards.map((card, i) => (
-                    <div key={card.id} style={{
-                      position: 'absolute',
-                      left: i * OX,
-                      top: i * OY,
-                      zIndex: i,
-                    }}>
-                      <Card card={card} faceDown={false} size="lg" />
-                    </div>
-                  ))}
+                  {playPile.cards.map((card, i) => {
+                    const isDeclaredWild = card.rank === '3' && combo !== null
+                    return (
+                      <div key={card.id} style={{
+                        position: 'absolute',
+                        left: i * OX,
+                        top: i * OY,
+                        zIndex: i,
+                      }}>
+                        <Card card={card} faceDown={false} size="lg" />
+                        {isDeclaredWild && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 6,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,0.82)',
+                            color: 'var(--accent)',
+                            fontSize: 11,
+                            fontWeight: 900,
+                            letterSpacing: '0.04em',
+                            borderRadius: 5,
+                            padding: '2px 7px',
+                            whiteSpace: 'nowrap',
+                            pointerEvents: 'none',
+                            zIndex: 10,
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
+                          }}>
+                            → {combo.rank}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )
             })()}
@@ -398,8 +455,8 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
         )}
       </div>
 
-      {/* Exchange received-cards overlay — shown briefly when cards arrive */}
-      {exchangeOverlay && myExchangeEntry && (() => {
+      {/* Exchange received-cards overlay — shown briefly when cards arrive (hide once player has returned their cards) */}
+      {exchangeOverlay && myExchangeEntry && !myExchangeEntry.done && (() => {
         const myHand = gameState.zones.find(z => z.id === `hand-${myPlayerId}`)
         const receivedCards = myExchangeEntry.receivedCardIds
           .map(id => myHand?.cards.find(c => c.id === id))
@@ -411,12 +468,12 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
             background: 'rgba(0,0,0,0.6)', pointerEvents: 'none',
           }}>
             <div className="fade-in" style={{
-              background: 'var(--surface)', border: '2px solid #a78bfa',
+              background: 'var(--surface)', border: '2px solid var(--accent)',
               borderRadius: 24, padding: '28px 36px', textAlign: 'center',
               boxShadow: '0 12px 48px rgba(0,0,0,0.7)', minWidth: 220,
             }}>
               <div style={{ fontSize: 40, marginBottom: 10 }}>🔄</div>
-              <p style={{ color: '#a78bfa', fontWeight: 900, fontSize: 18, marginBottom: 6 }}>
+              <p style={{ color: 'var(--accent)', fontWeight: 900, fontSize: 18, marginBottom: 6 }}>
                 Cards Received!
               </p>
               <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 14 }}>
@@ -429,8 +486,8 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
                   ))}
                 </div>
               )}
-              <p style={{ color: 'var(--text-dim)', fontSize: 11 }}>
-                Now choose {myExchangeEntry.cardsOwed} card{myExchangeEntry.cardsOwed !== 1 ? 's' : ''} to return ↓
+              <p style={{ color: 'var(--accent)', fontSize: 14, fontWeight: 900 }}>
+                👇 Choose {myExchangeEntry.cardsOwed} card{myExchangeEntry.cardsOwed !== 1 ? 's' : ''} to return
               </p>
             </div>
           </div>
@@ -448,7 +505,7 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
             background: 'rgba(0,0,0,0.6)', pointerEvents: 'none',
           }}>
             <div className="fade-in" style={{
-              background: 'var(--surface)', border: '2px solid rgba(139,92,246,0.4)',
+              background: 'var(--surface)', border: '2px solid color-mix(in srgb, var(--accent) 40%, transparent)',
               borderRadius: 24, padding: '28px 36px', textAlign: 'center',
               boxShadow: '0 12px 48px rgba(0,0,0,0.7)', minWidth: 220,
             }}>

@@ -117,6 +117,8 @@ export interface GameState {
   presidentRoles: Record<string, string>
   presidentRunPlays: { playerId: string; rank: string; count: number }[]
   presidentDiscardPhase: { playerId: string; cardsNeeded: number; done: boolean }[] | null
+  // Tracks an active run across discard phases so extensions keep granting individual discards
+  presidentRunExtension: { lastRank: string; lastCount: number; lastPlayerId: string; participants: string[] } | null
   // Between-round card exchange: president ← bum, vp ← vb
   presidentExchangePhase: {
     playerId: string       // president/vp — must return cards

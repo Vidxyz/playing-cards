@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
 import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal } from './CambioTutorial'
 
@@ -26,7 +26,19 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
   const [showBluffTutorial, setShowBluffTutorial] = useState(false)
   const [showEuchreTutorial, setShowEuchreTutorial] = useState(false)
   const [showPresidentTutorial, setShowPresidentTutorial] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
+
+  const copyJoinLink = useCallback(async () => {
+    const link = `${window.location.origin}/?join=${gameState.roomCode}`
+    try {
+      await navigator.clipboard.writeText(link)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    } catch {
+      // Clipboard API unavailable — silently ignore
+    }
+  }, [gameState.roomCode])
   const isHost = me?.isHost ?? false
   const playerCount = gameState.players.length
   const selectedGame = gameState.gameType
@@ -51,9 +63,18 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
             {gameState.roomCode}
           </span>
         </div>
-        <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-          Share this code — everyone joins from the home screen
-        </p>
+        <button
+          onClick={copyJoinLink}
+          className="mt-3 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
+          style={{
+            background: linkCopied ? 'rgba(139,92,246,0.12)' : 'var(--surface)',
+            border: '1px solid ' + (linkCopied ? 'rgba(139,92,246,0.45)' : 'var(--border)'),
+            color: linkCopied ? '#a78bfa' : 'var(--text-muted)',
+          }}
+        >
+          <span>{linkCopied ? '✓' : '🔗'}</span>
+          {linkCopied ? 'Link copied!' : 'Copy join link'}
+        </button>
       </div>
 
       {/* Players */}

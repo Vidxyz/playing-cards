@@ -83,6 +83,7 @@ function makeInitialState(roomCode: string, hostId = ''): GameState {
     presidentRoles: {},
     presidentRunPlays: [],
     presidentDiscardPhase: null,
+    presidentRunExtension: null,
     presidentExchangePhase: null,
     pokerStartingChips: 1000,
     pokerSmallBlind: 10,
@@ -258,7 +259,7 @@ export class RoomDO implements DurableObject {
         if (gs.gameType === 'euchre' && gs.euchrePhase === 'playing') {
           this.handleEuchreTrickPlay(gs, player, event.cardIds[0], ws)
         } else if (gs.gameType === 'president') {
-          const burnNextPlayer = this.handlePresidentPlay(gs, player, event.cardIds, ws)
+          const burnNextPlayer = this.handlePresidentPlay(gs, player, event.cardIds, ws, event.wildRank)
           if (burnNextPlayer !== undefined) {
             // Two-phase burn: show cards on table first, then clear after delay
             await this.saveState(gs)
@@ -689,17 +690,21 @@ export class RoomDO implements DurableObject {
         }
       }
 
-      // President from last game goes first; otherwise first in turn order
-      gs.currentTurnPlayerId = presId && gs.turnOrder.includes(presId)
-        ? presId
-        : gs.turnOrder[0]
-      gs.presidentCombo        = null
-      gs.presidentFinishOrder  = []
-      gs.presidentPassedIds    = []
-      gs.presidentRunPlays     = []
-      gs.presidentDiscardPhase = null
+      // Bum from last round starts; first-ever round picks a random player
+      if (bumId && gs.turnOrder.includes(bumId)) {
+        gs.currentTurnPlayerId = bumId
+      } else {
+        const randomIdx = Math.floor(Math.random() * gs.turnOrder.length)
+        gs.currentTurnPlayerId = gs.turnOrder[randomIdx]
+      }
+      gs.presidentCombo         = null
+      gs.presidentFinishOrder   = []
+      gs.presidentPassedIds     = []
+      gs.presidentRunPlays      = []
+      gs.presidentDiscardPhase  = null
+      gs.presidentRunExtension  = null
       gs.presidentExchangePhase = exchangeEntries.length > 0 ? exchangeEntries : null
-      gs.presidentRoles        = {}  // clear old roles; new ones assigned at round end
+      // presidentRoles intentionally kept from previous round so titles remain visible during gameplay
       gs.roundNumber++
       gs.phase = 'playing'
       gs.lastAction = { type: 'deal', playerId: gs.hostId, timestamp: Date.now() }
@@ -1252,22 +1257,9 @@ export class RoomDO implements DurableObject {
       team.roundScore = 0
     }
 
-    // President: return to lobby with roles preserved for card exchange
+    // President: redeal immediately (roles carry over for card exchange)
     if (gs.gameType === 'president') {
-      gs.phase = 'lobby'
-      gs.zones = []
-      gs.turnOrder = []
-      gs.currentTurnPlayerId = null
-      gs.presidentCombo = null
-      gs.presidentFinishOrder = []
-      gs.presidentPassedIds = []
-      gs.presidentDoubleDeck = false
-      gs.presidentRunPlays = []
-      gs.presidentDiscardPhase = null
-      gs.drawPileCount = 0
-      for (const player of gs.players) player.isReady = false
-      await this.saveState(gs)
-      await this.broadcastState(gs)
+      await this.handleDeal(gs)
       return
     }
 
@@ -1600,7 +1592,7 @@ export class RoomDO implements DurableObject {
 
   // ── President handlers ────────────────────────────────────────
 
-  private handlePresidentPlay(gs: GameState, player: Player, cardIds: string[], ws: WebSocket): string | undefined {
+  private handlePresidentPlay(gs: GameState, player: Player, cardIds: string[], ws: WebSocket, wildRank?: string): string | undefined {
     if (gs.presidentExchangePhase) {
       this.sendTo(ws, { type: 'error', message: 'Complete the card exchange first' })
       return
@@ -1630,7 +1622,13 @@ export class RoomDO implements DurableObject {
     }
     if (cards.length === 0) return
 
-    const combo = parseCombo(cards)
+    // Validate wildRank if provided (must be 4–Ace; 3, 2, and joker are excluded)
+    if (wildRank && (wildRank === '3' || wildRank === '2' || wildRank === 'JKR' || !(wildRank in PRESIDENT_RANK_VALUE))) {
+      this.sendTo(ws, { type: 'error', message: 'Invalid wild rank' })
+      return
+    }
+
+    const combo = parseCombo(cards, wildRank)
     if (!combo) {
       this.sendTo(ws, { type: 'error', message: 'Select cards of the same rank' })
       return
@@ -1704,41 +1702,92 @@ export class RoomDO implements DurableObject {
     }
 
     // ── Run tracking (non-burn plays only) ───────────────────────
-    if (combo.rank !== '2' && combo.rank !== 'JKR') {
-      const last = gs.presidentRunPlays[gs.presidentRunPlays.length - 1]
-      const rv = PRESIDENT_RANK_VALUE[combo.rank] ?? -1
-      const lastRv = last ? (PRESIDENT_RANK_VALUE[last.rank] ?? -1) : -1
-      const extendsRun = !last || (
-        last.playerId !== player.id &&
-        rv === lastRv + 1 &&
-        combo.count === last.count
-      )
-      if (extendsRun) {
-        gs.presidentRunPlays.push({ playerId: player.id, rank: combo.rank, count: combo.count })
-      } else {
-        gs.presidentRunPlays = [{ playerId: player.id, rank: combo.rank, count: combo.count }]
-      }
-    } else {
+    // burnerIdxInOrder was captured before any removal, so it's the correct
+    // pre-removal seat position for the finished-player correction in advanceTurnPresident.
+    const removedIdx = playerFinished ? burnerIdxInOrder : undefined
+
+    // 2s and jokers always break any run
+    if (combo.rank === '2' || combo.rank === 'JKR') {
       gs.presidentRunPlays = []
+      gs.presidentRunExtension = null
+      this.advanceTurnPresident(gs, removedIdx)
+      return
+    }
+
+    const rv = PRESIDENT_RANK_VALUE[combo.rank] ?? -1
+
+    // ── Extension mode: a run already triggered a discard; each consecutive
+    //    new-player extension grants that player an immediate individual discard.
+    //    Resets when the run loops back to a prior participant.
+    if (gs.presidentRunExtension !== null) {
+      const ext = gs.presidentRunExtension
+      const lastRv = PRESIDENT_RANK_VALUE[ext.lastRank] ?? -1
+      const consecutive = ext.lastPlayerId !== player.id
+        && rv === lastRv + 1
+        && combo.count === ext.lastCount
+
+      if (!consecutive || ext.participants.includes(player.id)) {
+        // Run broken or looped back — exit extension, start fresh run from this play
+        gs.presidentRunExtension = null
+        gs.presidentRunPlays = [{ playerId: player.id, rank: combo.rank, count: combo.count }]
+        this.advanceTurnPresident(gs, removedIdx)
+        return
+      }
+
+      // Valid extension by a new participant — immediate individual discard
+      gs.presidentRunExtension = {
+        lastRank: combo.rank,
+        lastCount: combo.count,
+        lastPlayerId: player.id,
+        participants: [...ext.participants, player.id],
+      }
+      gs.presidentRunPlays = []
+      this.advanceTurnPresident(gs, removedIdx)
+      const extHand = gs.zones.find(z => z.id === `hand-${player.id}`)
+      if ((extHand?.cards.length ?? 0) > 0) {
+        gs.presidentDiscardPhase = [{ playerId: player.id, cardsNeeded: combo.count, done: false }]
+      }
+      return
+    }
+
+    // ── Normal run-building mode ─────────────────────────────────
+    const last = gs.presidentRunPlays[gs.presidentRunPlays.length - 1]
+    const lastRv = last ? (PRESIDENT_RANK_VALUE[last.rank] ?? -1) : -1
+    const extendsRun = !last || (
+      last.playerId !== player.id &&
+      rv === lastRv + 1 &&
+      combo.count === last.count
+    )
+    if (extendsRun) {
+      gs.presidentRunPlays.push({ playerId: player.id, rank: combo.rank, count: combo.count })
+    } else {
+      gs.presidentRunPlays = [{ playerId: player.id, rank: combo.rank, count: combo.count }]
     }
 
     if (gs.presidentRunPlays.length >= 3) {
-      // Run of 3+ detected — advance turn then open discard phase
-      this.advanceTurnPresident(gs)
-      const participants = gs.presidentRunPlays.filter(rp => {
+      // Run of 3+ detected — advance turn, open discard, enter extension mode
+      this.advanceTurnPresident(gs, removedIdx)
+      const runParticipants = gs.presidentRunPlays.filter(rp => {
         const h = gs.zones.find(z => z.id === `hand-${rp.playerId}`)
         return (h?.cards.length ?? 0) > 0
       })
-      if (participants.length > 0) {
-        gs.presidentDiscardPhase = participants.map(rp => ({
+      if (runParticipants.length > 0) {
+        gs.presidentDiscardPhase = runParticipants.map(rp => ({
           playerId: rp.playerId,
           cardsNeeded: rp.count,
           done: false,
         }))
       }
+      const lastPlay = gs.presidentRunPlays[gs.presidentRunPlays.length - 1]
+      gs.presidentRunExtension = {
+        lastRank: lastPlay.rank,
+        lastCount: lastPlay.count,
+        lastPlayerId: lastPlay.playerId,
+        participants: gs.presidentRunPlays.map(rp => rp.playerId),
+      }
       gs.presidentRunPlays = []
     } else {
-      this.advanceTurnPresident(gs)
+      this.advanceTurnPresident(gs, removedIdx)
     }
   }
 
@@ -1758,7 +1807,7 @@ export class RoomDO implements DurableObject {
     this.advanceTurnPresident(gs)
   }
 
-  private advanceTurnPresident(gs: GameState): void {
+  private advanceTurnPresident(gs: GameState, removedIdx?: number): void {
     const order = gs.turnOrder
     if (order.length === 0) return
 
@@ -1775,7 +1824,12 @@ export class RoomDO implements DurableObject {
       return
     }
 
-    const curIdx = order.indexOf(gs.currentTurnPlayerId ?? '')
+    let curIdx = order.indexOf(gs.currentTurnPlayerId ?? '')
+    if (curIdx === -1 && removedIdx !== undefined) {
+      // The current player was just removed from turnOrder; reconstruct their effective
+      // prior position so the search starts from the correct next slot.
+      curIdx = (removedIdx - 1 + order.length) % order.length
+    }
     for (let i = 1; i <= order.length; i++) {
       const candidate = order[(curIdx + i) % order.length]
       if (!passed.has(candidate)) {
@@ -1789,6 +1843,7 @@ export class RoomDO implements DurableObject {
     gs.presidentCombo = null
     gs.presidentPassedIds = []
     gs.presidentRunPlays = []
+    gs.presidentRunExtension = null
     gs.currentTurnPlayerId = nextPlayerId
   }
 

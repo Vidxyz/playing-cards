@@ -38,6 +38,10 @@ const PICKER_RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10',
 const PICKER_ROW1: Rank[] = ['A', '2', '3', '4', '5', '6', '7']
 const PICKER_ROW2: Rank[] = ['8', '9', '10', 'J', 'Q', 'K']
 
+// President wild (3) rank picker — 4 through Ace only (3, 2, and joker excluded)
+const WILD_ROW1: Rank[] = ['4', '5', '6', '7', '8', '9', '10']
+const WILD_ROW2: Rank[] = ['J', 'Q', 'K', 'A']
+
 interface Props {
   zone: Zone
   onPlayCards?: (cardIds: string[], toZoneId: string, claim?: { rank: string }) => void
@@ -46,9 +50,10 @@ interface Props {
   gameType?: string
   bluffActiveRank?: string | null
   playLabel?: string
+  highlightCardIds?: string[]
 }
 
-export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluffActiveRank, playLabel }: Props) {
+export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluffActiveRank, playLabel, highlightCardIds }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [targetZoneId, setTargetZoneId] = useState<string>(targetZones[0]?.id || '')
   const [arrangeMode, setArrangeMode] = useState(false)
@@ -59,6 +64,9 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
   // Bluff declaration
   const [declaring, setDeclaring] = useState(false)
   const [claimRank, setClaimRank] = useState<string>('')
+  // President wild (3) rank declaration
+  const [declaringWild, setDeclaringWild] = useState(false)
+  const [wildRank, setWildRank] = useState<string>('')
 
   const fanContainerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(320)
@@ -83,10 +91,12 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
     }
   }, [zone.cards, gameType])
 
-  // Reset declaration panel when selection changes
+  // Reset declaration panels when selection changes
   useEffect(() => {
     setDeclaring(false)
     setClaimRank('')
+    setDeclaringWild(false)
+    setWildRank('')
   }, [selected.size])
 
   const isBluffTarget = targetZones.find(z => z.id === targetZoneId)?.isBluffPile ?? false
@@ -126,11 +136,19 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
       setDeclaring(true)
       return
     }
+    // President wilds: all selected are 3s — prompt the player to choose a rank
+    if (gameType === 'president') {
+      const allWild = [...selected].every(id => zone.cards.find(c => c.id === id)?.rank === '3')
+      if (allWild) {
+        setDeclaringWild(true)
+        return
+      }
+    }
     // Active rank set, or non-bluff zone — play immediately
     const claim = isBluffTarget ? { rank: bluffActiveRank! } : undefined
     onPlayCards?.([...selected], targetZoneId, claim)
     setSelected(new Set())
-  }, [selected, targetZoneId, isBluffTarget, bluffActiveRank, onPlayCards])
+  }, [selected, targetZoneId, isBluffTarget, bluffActiveRank, gameType, zone.cards, onPlayCards])
 
   const handleDeclareAndPlay = useCallback(() => {
     if (!claimRank || selected.size === 0) return
@@ -139,6 +157,14 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
     setDeclaring(false)
     setClaimRank('')
   }, [claimRank, selected, targetZoneId, onPlayCards])
+
+  const handleWildPlay = useCallback(() => {
+    if (!wildRank || selected.size === 0) return
+    onPlayCards?.([...selected], targetZoneId, { rank: wildRank })
+    setSelected(new Set())
+    setDeclaringWild(false)
+    setWildRank('')
+  }, [wildRank, selected, targetZoneId, onPlayCards])
 
   const orderedCards = customOrder
     .map(id => zone.cards.find(c => c.id === id))
@@ -161,17 +187,29 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
         <div className="flex items-end" style={{ width: fanWidth }}>
           {orderedCards.map((card, i) => {
             const isSelected = arrangeMode ? movingId === card.id : selected.has(card.id)
+            const isHighlighted = highlightCardIds?.includes(card.id) ?? false
             return (
               <div
                 key={card.id}
                 className="flex-shrink-0"
                 style={{
                   marginLeft: i === 0 ? 0 : -(overlap),
-                  // Keep natural z-index ordering so selected cards don't cover adjacent ones
                   zIndex: i,
                   position: 'relative',
                 }}
               >
+                {isHighlighted && (
+                  <div style={{
+                    position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)',
+                    background: 'var(--accent)', color: '#000',
+                    fontSize: 9, fontWeight: 900, letterSpacing: '0.06em',
+                    borderRadius: 4, padding: '2px 5px',
+                    zIndex: 10, whiteSpace: 'nowrap',
+                    boxShadow: '0 0 6px color-mix(in srgb, var(--accent) 70%, transparent)',
+                  }}>
+                    NEW
+                  </div>
+                )}
                 <Card
                   card={card}
                   selected={isSelected}
@@ -215,7 +253,7 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
       </div>
 
       {/* Action panel */}
-      {!arrangeMode && selected.size > 0 && !declaring && (
+      {!arrangeMode && selected.size > 0 && !declaring && !declaringWild && isMyTurn !== false && (
         <div className="px-4 pb-2 flex flex-col gap-2 card-slide">
           {targetZones.length > 1 && (
             <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
@@ -248,7 +286,13 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
                   ? bluffActiveRank
                     ? `Play ${selected.size} ${rankLabel(bluffActiveRank, selected.size)}`
                     : `Declare & Play ${selected.size}`
-                  : `Play ${selected.size} card${selected.size !== 1 ? 's' : ''}`}
+                  : (() => {
+                      if (gameType === 'president') {
+                        const allWild = [...selected].every(id => zone.cards.find(c => c.id === id)?.rank === '3')
+                        if (allWild) return `Declare ${selected.size} Wild${selected.size !== 1 ? 's' : ''}`
+                      }
+                      return `Play ${selected.size} card${selected.size !== 1 ? 's' : ''}`
+                    })()}
             </button>
             <button
               onClick={() => setSelected(new Set())}
@@ -323,6 +367,73 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
           >
             {claimRank
               ? `Claim "${selected.size} ${rankLabel(claimRank, selected.size)}" & Play`
+              : 'Pick a rank above'}
+          </button>
+        </div>
+      )}
+
+      {/* President wild (3) rank declaration panel */}
+      {!arrangeMode && declaringWild && (
+        <div className="px-4 pb-3 flex flex-col gap-3 card-slide">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+              {selected.size === 1 ? 'Wild 3 — play it as what rank?' : `${selected.size} Wild 3s — play them as what rank?`}
+            </p>
+            <button
+              onClick={() => setDeclaringWild(false)}
+              className="text-xs px-2 py-0.5 rounded-full"
+              style={{ color: 'var(--text-dim)', background: 'var(--surface-mid)', border: '1px solid var(--border)' }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Rank picker — 2 rows, excluding 3 and joker */}
+          <div className="flex flex-col gap-1.5">
+            {[WILD_ROW1, WILD_ROW2].map((row, ri) => (
+              <div key={ri} className="flex gap-1.5">
+                {row.map(r => {
+                  const isActive = wildRank === r
+                  return (
+                    <div
+                      key={r}
+                      onClick={() => setWildRank(r)}
+                      style={{
+                        cursor: 'pointer',
+                        outline: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                        outlineOffset: 2,
+                        borderRadius: 'var(--radius-card)',
+                        transition: 'outline 0.12s ease',
+                        flex: 1, height: 48,
+                        background: 'white',
+                        border: '1px solid rgba(0,0,0,0.12)',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#111',
+                        fontSize: 13, fontWeight: 700,
+                        userSelect: 'none',
+                      }}
+                    >
+                      {r}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+
+          <button
+            disabled={!wildRank}
+            onClick={handleWildPlay}
+            className="w-full py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+            style={{
+              background: wildRank ? 'var(--accent)' : 'var(--surface-mid)',
+              color: wildRank ? '#000' : 'var(--text-dim)',
+              cursor: wildRank ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {wildRank
+              ? `Play as ${selected.size === 1 ? rankLabel(wildRank, 1) : `${selected.size} ${rankLabel(wildRank, selected.size)}`}`
               : 'Pick a rank above'}
           </button>
         </div>
