@@ -9,6 +9,9 @@ import {
   biddingOrder, findPartner, isTrump, effectiveSuit,
   determineTrickWinner, isLeftBower,
 } from './game/euchre'
+import {
+  parseCombo, comboBeats, isBurn, assignRoles, sortBest, PRESIDENT_RANK_VALUE,
+} from './game/president'
 
 interface Session {
   ws: WebSocket
@@ -106,6 +109,13 @@ export class RoomDO implements DurableObject {
           cambioJokers: 2,
           bluffJokers: 0,
           presidentDoubleDeck: false,
+          presidentCombo: null,
+          presidentFinishOrder: [],
+          presidentPassedIds: [],
+          presidentRoles: {},
+          presidentRunPlays: [],
+          presidentDiscardPhase: null,
+          presidentExchangePhase: null,
         }
         await this.saveState(gs)
         await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS)
@@ -198,7 +208,22 @@ export class RoomDO implements DurableObject {
 
       case 'play_cards':
         if (gs.gameType === 'euchre' && gs.euchrePhase === 'playing') {
-          this.handleEuchreTrickPlay(gs, player, event.cardIds[0])
+          this.handleEuchreTrickPlay(gs, player, event.cardIds[0], ws)
+        } else if (gs.gameType === 'president') {
+          const burnNextPlayer = this.handlePresidentPlay(gs, player, event.cardIds, ws)
+          if (burnNextPlayer !== undefined) {
+            // Two-phase burn: show cards on table first, then clear after delay
+            await this.saveState(gs)
+            await this.broadcastState(gs)
+            await new Promise<void>(r => setTimeout(r, 2200))
+            const playPile = gs.zones.find(z => z.id === 'play-pile')
+            const cleared  = gs.zones.find(z => z.id === 'cleared')
+            if (playPile && cleared) { cleared.cards.push(...playPile.cards); playPile.cards = [] }
+            this.endPresidentRound(gs, burnNextPlayer)
+            await this.saveState(gs)
+            await this.broadcastState(gs)
+            return
+          }
         } else {
           this.handlePlayCards(gs, player, event.cardIds, event.toZoneId, event.bluffClaim)
         }
@@ -228,7 +253,23 @@ export class RoomDO implements DurableObject {
         this.handleResolveBluff(gs)
         break
 
+      case 'president_run_discard':
+        if (gs.gameType === 'president') {
+          this.handlePresidentRunDiscard(gs, player, event.cardIds, ws)
+        }
+        break
+
+      case 'president_exchange_return':
+        if (gs.gameType === 'president') {
+          this.handlePresidentExchangeReturn(gs, player, event.cardIds, ws)
+        }
+        break
+
       case 'pass_turn':
+        if (gs.gameType === 'president') {
+          this.handlePresidentPass(gs, player, ws)
+          break
+        }
         if (gs.gameType === 'bluff') {
           const bluffZone = gs.zones.find(z => z.isBluffPile)
           if (bluffZone && bluffZone.cards.length > 0 && gs.lastBluffBatch) {
@@ -415,6 +456,13 @@ export class RoomDO implements DurableObject {
         cambioJokers: 2,
         bluffJokers: 0,
         presidentDoubleDeck: false,
+        presidentCombo: null,
+        presidentFinishOrder: [],
+        presidentPassedIds: [],
+        presidentRoles: {},
+        presidentRunPlays: [],
+        presidentDiscardPhase: null,
+        presidentExchangePhase: null,
       }
     }
 
@@ -468,8 +516,8 @@ export class RoomDO implements DurableObject {
       ? { ...config.deckFilter, jokerCount: gs.cambioJokers }
       : gs.gameType === 'bluff'
         ? { ...config.deckFilter, jokerCount: gs.bluffJokers }
-        : gs.gameType === 'president' && useDoubleDeck
-          ? { ...config.deckFilter, copies: 2 }
+        : gs.gameType === 'president'
+          ? { ...config.deckFilter, copies: useDoubleDeck ? 2 : 1, jokerCount: useDoubleDeck ? 4 : 2 }
           : config.deckFilter
     const deck = shuffle(buildDeck(deckFilter))
 
@@ -506,6 +554,65 @@ export class RoomDO implements DurableObject {
         gs.turnOrder.push(dealerId)
       }
     }
+    // President: card exchange then start
+    if (gs.gameType === 'president') {
+      const n = gs.players.length
+      const exchangeCount = n <= 3 ? 1 : 2
+      const roles = gs.presidentRoles
+
+      const getHand = (pid: string) => gs.zones.find(z => z.id === `hand-${pid}`)
+
+      const presId = Object.keys(roles).find(id => roles[id] === 'president')
+      const bumId  = Object.keys(roles).find(id => roles[id] === 'bum')
+      const vpId   = Object.keys(roles).find(id => roles[id] === 'vp')
+      const vbId   = Object.keys(roles).find(id => roles[id] === 'vb')
+
+      const exchangeEntries: NonNullable<GameState['presidentExchangePhase']> = []
+
+      if (presId && bumId) {
+        const bumHand = getHand(bumId), presHand = getHand(presId)
+        if (bumHand && presHand) {
+          const best = sortBest(bumHand.cards).slice(0, exchangeCount)
+          const receivedCardIds = best.map(c => c.id)
+          for (const card of best) {
+            const idx = bumHand.cards.findIndex(c => c.id === card.id)
+            if (idx !== -1) { bumHand.cards.splice(idx, 1); presHand.cards.push(card) }
+          }
+          exchangeEntries.push({ playerId: presId, recipientId: bumId, cardsOwed: exchangeCount, done: false, receivedCardIds, giverRole: 'bum' })
+        }
+      }
+      if (vpId && vbId) {
+        const vbHand = getHand(vbId), vpHand = getHand(vpId)
+        if (vbHand && vpHand) {
+          const best = sortBest(vbHand.cards).slice(0, 1)
+          const receivedCardIds = best.map(c => c.id)
+          for (const card of best) {
+            const idx = vbHand.cards.findIndex(c => c.id === card.id)
+            if (idx !== -1) { vbHand.cards.splice(idx, 1); vpHand.cards.push(card) }
+          }
+          exchangeEntries.push({ playerId: vpId, recipientId: vbId, cardsOwed: 1, done: false, receivedCardIds, giverRole: 'vb' })
+        }
+      }
+
+      // President from last game goes first; otherwise first in turn order
+      gs.currentTurnPlayerId = presId && gs.turnOrder.includes(presId)
+        ? presId
+        : gs.turnOrder[0]
+      gs.presidentCombo        = null
+      gs.presidentFinishOrder  = []
+      gs.presidentPassedIds    = []
+      gs.presidentRunPlays     = []
+      gs.presidentDiscardPhase = null
+      gs.presidentExchangePhase = exchangeEntries.length > 0 ? exchangeEntries : null
+      gs.presidentRoles        = {}  // clear old roles; new ones assigned at round end
+      gs.roundNumber++
+      gs.phase = 'playing'
+      gs.lastAction = { type: 'deal', playerId: gs.hostId, timestamp: Date.now() }
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
+
     // Euchre: pick/rotate dealer, set up bidding
     if (gs.gameType === 'euchre') {
       const prevDealerSeat = gs.euchreDealerPlayerId
@@ -830,8 +937,11 @@ export class RoomDO implements DurableObject {
     for (const p of gs.players) p.trickCount = 0
   }
 
-  private handleEuchreTrickPlay(gs: GameState, player: Player, cardId: string): void {
-    if (gs.currentTurnPlayerId !== player.id) return
+  private handleEuchreTrickPlay(gs: GameState, player: Player, cardId: string, ws: WebSocket): void {
+    if (gs.currentTurnPlayerId !== player.id) {
+      this.sendTo(ws, { type: 'error', message: "It's not your turn" })
+      return
+    }
     const hand = gs.zones.find(z => z.id === `hand-${player.id}`)
     if (!hand) return
     const cardIdx = hand.cards.findIndex(c => c.id === cardId)
@@ -844,7 +954,10 @@ export class RoomDO implements DurableObject {
       const canFollow = hand.cards.some(
         c => effectiveSuit(c, trump) === gs.euchreCurrentTrickLedSuit
       )
-      if (canFollow && effectiveSuit(card, trump) !== gs.euchreCurrentTrickLedSuit) return
+      if (canFollow && effectiveSuit(card, trump) !== gs.euchreCurrentTrickLedSuit) {
+        this.sendTo(ws, { type: 'error', message: 'You must follow suit' })
+        return
+      }
     }
 
     // Move card to trick zone
@@ -963,6 +1076,25 @@ export class RoomDO implements DurableObject {
     gs.euchreGoingAlone = false
     gs.euchreBidPassCount = 0
     gs.euchreCurrentTrickLedSuit = null
+
+    // President: return to lobby with roles preserved for card exchange
+    if (gs.gameType === 'president') {
+      gs.phase = 'lobby'
+      gs.zones = []
+      gs.turnOrder = []
+      gs.currentTurnPlayerId = null
+      gs.presidentCombo = null
+      gs.presidentFinishOrder = []
+      gs.presidentPassedIds = []
+      gs.presidentDoubleDeck = false
+      gs.presidentRunPlays = []
+      gs.presidentDiscardPhase = null
+      gs.drawPileCount = 0
+      for (const player of gs.players) player.isReady = false
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
 
     // Euchre: check for game over (10 pts), then redeal
     if (gs.gameType === 'euchre') {
@@ -1260,6 +1392,287 @@ export class RoomDO implements DurableObject {
     discard.cards = [top]
     gs.drawPileCount = this.drawPile.length
   }
+
+  // ── President handlers ────────────────────────────────────────
+
+  private handlePresidentPlay(gs: GameState, player: Player, cardIds: string[], ws: WebSocket): string | undefined {
+    if (gs.presidentExchangePhase) {
+      this.sendTo(ws, { type: 'error', message: 'Complete the card exchange first' })
+      return
+    }
+    if (gs.presidentDiscardPhase) {
+      this.sendTo(ws, { type: 'error', message: 'Wait for run discards to complete' })
+      return
+    }
+    if (gs.currentTurnPlayerId !== player.id) {
+      this.sendTo(ws, { type: 'error', message: "It's not your turn" })
+      return
+    }
+    if (gs.presidentPassedIds.includes(player.id)) {
+      this.sendTo(ws, { type: 'error', message: "You've already passed this round" })
+      return
+    }
+    if (gs.presidentFinishOrder.includes(player.id)) return
+
+    const hand = gs.zones.find(z => z.id === `hand-${player.id}`)
+    if (!hand) return
+
+    const cards: Card[] = []
+    for (const cardId of cardIds) {
+      const idx = hand.cards.findIndex(c => c.id === cardId)
+      if (idx === -1) return
+      cards.push(hand.cards[idx])
+    }
+    if (cards.length === 0) return
+
+    const combo = parseCombo(cards)
+    if (!combo) {
+      this.sendTo(ws, { type: 'error', message: 'Select cards of the same rank' })
+      return
+    }
+
+    const stored = gs.presidentCombo
+    const tableCombo = stored ? {
+      rank: stored.rank,
+      maxSuit: stored.suit as Suit,
+      count: stored.count,
+      maxSuitIsWild: stored.maxSuitIsWild,
+    } : null
+
+    if (!comboBeats(combo, tableCombo)) {
+      this.sendTo(ws, { type: 'error', message: "Doesn't beat the table — play higher" })
+      return
+    }
+
+    const burn = isBurn(combo, tableCombo)
+    const burnerIdxInOrder = gs.turnOrder.indexOf(player.id)
+
+    for (const card of cards) {
+      const idx = hand.cards.findIndex(c => c.id === card.id)
+      if (idx !== -1) hand.cards.splice(idx, 1)
+    }
+
+    const playPile = gs.zones.find(z => z.id === 'play-pile')
+    if (playPile) playPile.cards.push(...cards)
+
+    gs.presidentCombo = { rank: combo.rank, suit: combo.maxSuit, count: combo.count, maxSuitIsWild: combo.maxSuitIsWild }
+
+    gs.lastAction = {
+      type: 'play',
+      playerId: player.id,
+      cardIds,
+      fromZoneId: `hand-${player.id}`,
+      toZoneId: 'play-pile',
+      claim: burn ? 'burn' : undefined,
+      timestamp: Date.now(),
+    }
+
+    const playerFinished = hand.cards.length === 0
+    if (playerFinished) {
+      gs.presidentFinishOrder.push(player.id)
+      gs.turnOrder = gs.turnOrder.filter(id => id !== player.id)
+      gs.presidentPassedIds = gs.presidentPassedIds.filter(id => id !== player.id)
+    }
+
+    if (gs.turnOrder.length <= 1) {
+      for (const p of gs.players) {
+        if (!gs.presidentFinishOrder.includes(p.id)) gs.presidentFinishOrder.push(p.id)
+      }
+      gs.presidentRoles = assignRoles(gs.presidentFinishOrder, gs.players.length)
+      gs.phase = 'round-over'
+      // Game-ending burn: clear pile immediately (results screen shows next, no animation needed)
+      if (burn) {
+        const cleared = gs.zones.find(z => z.id === 'cleared')
+        if (playPile && cleared) { cleared.cards.push(...playPile.cards); playPile.cards = [] }
+        gs.presidentCombo    = null
+        gs.presidentRunPlays = []
+      }
+      return undefined
+    }
+
+    if (burn) {
+      // Return nextPlayerId — caller clears pile after showing the burn animation
+      const nextPlayerId = playerFinished
+        ? gs.turnOrder[burnerIdxInOrder % gs.turnOrder.length]
+        : player.id
+      return nextPlayerId
+    }
+
+    // ── Run tracking (non-burn plays only) ───────────────────────
+    if (combo.rank !== '2' && combo.rank !== 'JKR') {
+      const last = gs.presidentRunPlays[gs.presidentRunPlays.length - 1]
+      const rv = PRESIDENT_RANK_VALUE[combo.rank] ?? -1
+      const lastRv = last ? (PRESIDENT_RANK_VALUE[last.rank] ?? -1) : -1
+      const extendsRun = !last || (
+        last.playerId !== player.id &&
+        rv === lastRv + 1 &&
+        combo.count === last.count
+      )
+      if (extendsRun) {
+        gs.presidentRunPlays.push({ playerId: player.id, rank: combo.rank, count: combo.count })
+      } else {
+        gs.presidentRunPlays = [{ playerId: player.id, rank: combo.rank, count: combo.count }]
+      }
+    } else {
+      gs.presidentRunPlays = []
+    }
+
+    if (gs.presidentRunPlays.length >= 3) {
+      // Run of 3+ detected — advance turn then open discard phase
+      this.advanceTurnPresident(gs)
+      const participants = gs.presidentRunPlays.filter(rp => {
+        const h = gs.zones.find(z => z.id === `hand-${rp.playerId}`)
+        return (h?.cards.length ?? 0) > 0
+      })
+      if (participants.length > 0) {
+        gs.presidentDiscardPhase = participants.map(rp => ({
+          playerId: rp.playerId,
+          cardsNeeded: rp.count,
+          done: false,
+        }))
+      }
+      gs.presidentRunPlays = []
+    } else {
+      this.advanceTurnPresident(gs)
+    }
+  }
+
+  private handlePresidentPass(gs: GameState, player: Player, ws: WebSocket): void {
+    if (gs.presidentExchangePhase) return
+    if (gs.presidentDiscardPhase) return
+    if (gs.currentTurnPlayerId !== player.id) {
+      this.sendTo(ws, { type: 'error', message: "It's not your turn" })
+      return
+    }
+    if (gs.presidentPassedIds.includes(player.id)) return
+    if (gs.presidentFinishOrder.includes(player.id)) return
+
+    gs.presidentPassedIds.push(player.id)
+    gs.lastAction = { type: 'pass', playerId: player.id, timestamp: Date.now() }
+
+    this.advanceTurnPresident(gs)
+  }
+
+  private advanceTurnPresident(gs: GameState): void {
+    const order = gs.turnOrder
+    if (order.length === 0) return
+
+    const passed = new Set(gs.presidentPassedIds)
+    const active = order.filter(id => !passed.has(id))
+
+    if (active.length <= 1) {
+      // Round ends: last remaining active player starts next
+      const nextId = active.length === 1 ? active[0] : (gs.currentTurnPlayerId ?? order[0])
+      const playPile = gs.zones.find(z => z.id === 'play-pile')
+      const cleared = gs.zones.find(z => z.id === 'cleared')
+      if (playPile && cleared) { cleared.cards.push(...playPile.cards); playPile.cards = [] }
+      this.endPresidentRound(gs, nextId)
+      return
+    }
+
+    const curIdx = order.indexOf(gs.currentTurnPlayerId ?? '')
+    for (let i = 1; i <= order.length; i++) {
+      const candidate = order[(curIdx + i) % order.length]
+      if (!passed.has(candidate)) {
+        gs.currentTurnPlayerId = candidate
+        return
+      }
+    }
+  }
+
+  private endPresidentRound(gs: GameState, nextPlayerId: string): void {
+    gs.presidentCombo = null
+    gs.presidentPassedIds = []
+    gs.presidentRunPlays = []
+    gs.currentTurnPlayerId = nextPlayerId
+  }
+
+  private handlePresidentRunDiscard(gs: GameState, player: Player, cardIds: string[], ws: WebSocket): void {
+    const phase = gs.presidentDiscardPhase
+    if (!phase) return
+    const entry = phase.find(d => d.playerId === player.id && !d.done)
+    if (!entry) return
+
+    if (cardIds.length > 0) {
+      if (cardIds.length > entry.cardsNeeded) {
+        this.sendTo(ws, { type: 'error', message: `Discard at most ${entry.cardsNeeded} card${entry.cardsNeeded !== 1 ? 's' : ''}` })
+        return
+      }
+      const hand = gs.zones.find(z => z.id === `hand-${player.id}`)
+      if (!hand) { entry.done = true; return }
+      for (const cardId of cardIds) {
+        const idx = hand.cards.findIndex(c => c.id === cardId)
+        if (idx === -1) {
+          this.sendTo(ws, { type: 'error', message: 'Card not found in your hand' })
+          return
+        }
+      }
+      const discarded: string[] = []
+      for (const cardId of cardIds) {
+        const idx = hand.cards.findIndex(c => c.id === cardId)
+        if (idx !== -1) { hand.cards.splice(idx, 1); discarded.push(cardId) }
+      }
+      // If player emptied their hand, mark them as finished
+      if (hand.cards.length === 0 && !gs.presidentFinishOrder.includes(player.id)) {
+        gs.presidentFinishOrder.push(player.id)
+        gs.turnOrder = gs.turnOrder.filter(id => id !== player.id)
+        gs.presidentPassedIds = gs.presidentPassedIds.filter(id => id !== player.id)
+      }
+    }
+
+    entry.done = true
+
+    // Close phase when all participants are done
+    if (phase.every(d => d.done)) {
+      gs.presidentDiscardPhase = null
+      // Check if game should end (≤1 players with cards)
+      if (gs.turnOrder.length <= 1) {
+        for (const p of gs.players) {
+          if (!gs.presidentFinishOrder.includes(p.id)) gs.presidentFinishOrder.push(p.id)
+        }
+        gs.presidentRoles = assignRoles(gs.presidentFinishOrder, gs.players.length)
+        gs.phase = 'round-over'
+      }
+    }
+  }
+
+  private handlePresidentExchangeReturn(gs: GameState, player: Player, cardIds: string[], ws: WebSocket): void {
+    const phase = gs.presidentExchangePhase
+    if (!phase) return
+    const entry = phase.find(e => e.playerId === player.id && !e.done)
+    if (!entry) {
+      this.sendTo(ws, { type: 'error', message: 'Not your turn to return cards' })
+      return
+    }
+    if (cardIds.length !== entry.cardsOwed) {
+      this.sendTo(ws, { type: 'error', message: `Must return exactly ${entry.cardsOwed} card${entry.cardsOwed !== 1 ? 's' : ''}` })
+      return
+    }
+
+    const myHand = gs.zones.find(z => z.id === `hand-${player.id}`)
+    const recipientHand = gs.zones.find(z => z.id === `hand-${entry.recipientId}`)
+    if (!myHand || !recipientHand) return
+
+    for (const cardId of cardIds) {
+      if (!myHand.cards.find(c => c.id === cardId)) {
+        this.sendTo(ws, { type: 'error', message: 'Card not in your hand' })
+        return
+      }
+    }
+
+    for (const cardId of cardIds) {
+      const idx = myHand.cards.findIndex(c => c.id === cardId)
+      if (idx !== -1) {
+        const [card] = myHand.cards.splice(idx, 1)
+        recipientHand.cards.push(card)
+      }
+    }
+
+    entry.done = true
+    if (phase.every(e => e.done)) gs.presidentExchangePhase = null
+  }
+
+  // ── End President handlers ────────────────────────────────────
 
   // ── Standard helpers ──────────────────────────────────────────
 

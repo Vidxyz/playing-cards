@@ -20,6 +20,8 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
   const [peekResults, setPeekResults] = useState<PeekResult[]>([])
   // Initial-deal peeks for Cambio: held until the player taps "ready", then shown for 3s client-side
   const [initialPeeks, setInitialPeeks] = useState<PeekResult[]>([])
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const socketRef = useRef<RoomSocket | null>(null)
   const joinedRef = useRef(false)
 
@@ -31,6 +33,10 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
       }
     } else if (event.type === 'action') {
       setLastAction(event.action)
+    } else if (event.type === 'error') {
+      setErrorMsg(event.message)
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
+      errorTimerRef.current = setTimeout(() => setErrorMsg(null), 3000)
     } else if (event.type === 'peek_result') {
       const entry: PeekResult = { cardId: event.cardId, zoneId: event.zoneId, rank: event.rank, suit: event.suit }
       if (event.fromInitialDeal) {
@@ -74,6 +80,7 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
       socket.close()
       socketRef.current = null
       joinedRef.current = false
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
     }
   }, [roomCode, playerId, handleMessage, handleStatus])
 
@@ -83,5 +90,5 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
 
   const clearInitialPeeks = useCallback(() => setInitialPeeks([]), [])
 
-  return { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send }
+  return { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send, errorMsg }
 }

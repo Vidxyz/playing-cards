@@ -11,12 +11,12 @@ type Env = {
 const app = new Hono<{ Bindings: Env }>()
 
 app.use('*', async (c, next) => {
-  const origins = c.env.ALLOWED_ORIGINS
+  const origin = c.env.ALLOWED_ORIGINS
     ? c.env.ALLOWED_ORIGINS.split(',')
-    : ['http://localhost:3000']
+    : '*'
 
   return cors({
-    origin: origins,
+    origin,
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['Content-Type'],
   })(c, next)

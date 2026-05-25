@@ -161,10 +161,10 @@ Open two terminals:
 
 ```bash
 # Terminal 1 — Worker (binds to 0.0.0.0 so network devices can reach it)
-pnpm --filter @playing-cards/worker dev -- --ip 0.0.0.0
+pnpm --filter @playing-cards/worker exec wrangler dev --ip 0.0.0.0
 
 # Terminal 2 — Web
-pnpm --filter @playing-cards/web dev -- -H 0.0.0.0
+pnpm --filter @playing-cards/web exec next dev -H 0.0.0.0
 ```
 
 **Step 4 — connect from other devices**

@@ -252,6 +252,86 @@ export function EuchreTutorialModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+export function PresidentTutorialModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-3xl overflow-y-auto card-slide"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxHeight: '88vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 sticky top-0"
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>How to Play President</h2>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>aka Scum / Asshole — get rid of cards first</p>
+          </div>
+          <button onClick={onClose} className="text-sm px-3 py-1 rounded-full"
+            style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 pb-8 pt-4 flex flex-col gap-5">
+
+          <TutSection icon="🎯" title="Goal">
+            <p>Empty your hand first to become <strong>President</strong>. Last player holding cards is the <strong>Bum</strong>.</p>
+          </TutSection>
+
+          <TutSection icon="🃏" title="Card Types">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Normal cards (4–A)" desc="Standard cards. Higher rank beats lower. Same rank — suit breaks the tie (♠ › ♥ › ♣ › ♦)." />
+              <Row label="Wildcards — 3s" desc="A 3 takes the rank of the cards it's played with, but keeps its own suit. Real card at the same value burns a wildcard." />
+              <Row label="Special — 2s" desc="Bypass the current rank. To beat a play of N cards, you need exactly max(1, N−1) twos. Suit burns still apply." />
+              <Row label="Joker" desc="Must be played alone. Beats everything and always burns the pile." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="⬆️" title="Playing a Combo">
+            <p>On your turn, select one or more cards of the same rank (or mix in wildcards / 3s) and tap Play.</p>
+            <div className="flex flex-col gap-2 mt-2">
+              <Row label="Must beat the table" desc="Your combo's rank must be higher than what's on the table. Your count must match the previous count." />
+              <Row label="Suit tiebreaker" desc="Same rank? Your highest suit must beat the table's highest suit: ♠ › ♥ › ♣ › ♦." />
+              <Row label="Pass" desc="Skip your turn for this round. You cannot play again until the pile is cleared." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="🔥" title="Burns — Clearing the Pile">
+            <p>A burn clears the pile and lets you (or the next player) play anything fresh.</p>
+            <div className="flex flex-col gap-2 mt-2">
+              <Row label="Suit burn" desc="If your highest suit is strictly above the table's highest suit, it's a burn — pile clears, you go again." />
+              <Row label="Real beats wild" desc="If both have the same top suit, but yours is a real card and the table's is a wildcard (3), that's also a burn." />
+              <Row label="Joker always burns" desc="A Joker always clears the pile regardless." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="🔄" title="Round End">
+            <p>A round of play ends when either a burn happens <strong>or</strong> all-but-one players have passed. The last active player starts the next round with a fresh pile.</p>
+          </TutSection>
+
+          <TutSection icon="🏆" title="Positions (4+ players)">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="👑 President (1st)" desc="Finishes first. Receives the Bum's best card(s) at the start of next round." />
+              <Row label="🥈 VP (2nd)" desc="Receives the Vice Bum's best card." />
+              <Row label="😐 Neutral (middle)" desc="No card exchange." />
+              <Row label="😬 Vice Bum (2nd-to-last)" desc="Must give their best card to the VP." />
+              <Row label="💀 Bum (last)" desc="Last to empty hand. Must give their best card(s) to the President." />
+            </div>
+            <p className="text-[11px] mt-2" style={{ color: 'var(--text-dim)' }}>
+              Card exchange is automatic at the start of each round. The President always goes first.
+            </p>
+          </TutSection>
+
+          <TutSection icon="🎲" title="2-Player Note">
+            <p>With only 2 players there are no VP/VB roles — just Winner and Bum. With 5+ players, two decks are used and duplicate cards are possible.</p>
+          </TutSection>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TutSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (
     <div>

@@ -1,0 +1,591 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import type { GameState, ClientEvent } from '@playing-cards/shared'
+import { Card } from './Card'
+
+const SUIT_SYMBOL: Record<string, string> = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }
+const SUIT_COLOR: Record<string, string> = {
+  spades: 'var(--text)', clubs: 'var(--text)',
+  hearts: '#f87171', diamonds: '#f87171',
+}
+const ROLE_LABEL: Record<string, string> = {
+  president: '👑 President',
+  vp: '🥈 VP',
+  neutral: 'Neutral',
+  vb: 'Vice Bum',
+  bum: '💀 Bum',
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+interface BurnInfo {
+  ownerStr: string  // "Your" | "Alice's"
+  rank: string      // 'JKR' | 'A' | '2' | etc.
+  suit: string      // Suit key
+}
+
+interface FinishBanner {
+  position: number      // 1-based finish position
+  role: string | null   // 'president' | 'vp' | null (others determined at round end)
+}
+
+interface Props {
+  gameState: GameState
+  myPlayerId: string
+  isHost: boolean
+  send: (event: ClientEvent) => void
+  onHome: () => void
+}
+
+export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: Props) {
+  const [burnFlash, setBurnFlash] = useState(false)
+  const [burnInfo, setBurnInfo] = useState<BurnInfo | null>(null)
+  const lastBurnTimestampRef = useRef<number | null>(null)
+  const burnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [finishBanner, setFinishBanner] = useState<FinishBanner | null>(null)
+  const prevFinishIdxRef = useRef(-1)
+  const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Exchange phase animation: show overlay when cards arrive
+  const [exchangeOverlay, setExchangeOverlay] = useState(false)
+  const exchangeWasActiveRef = useRef(false)
+  const exchangeOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const action = gameState.lastAction
+    if (!action || action.type !== 'play' || action.claim !== 'burn') return
+    // Guard by timestamp: both phases of a two-phase broadcast share the same timestamp.
+    // Without this, the second broadcast (pile cleared) would re-trigger the animation.
+    if (action.timestamp === lastBurnTimestampRef.current) return
+    lastBurnTimestampRef.current = action.timestamp
+
+    // Capture info from first broadcast (cards still on pile, combo still set)
+    const player = gameState.players.find(p => p.id === action.playerId)
+    const combo = gameState.presidentCombo
+    setBurnInfo({
+      ownerStr: action.playerId === myPlayerId ? 'Your' : `${player?.name ?? 'Someone'}'s`,
+      rank: combo?.rank ?? '?',
+      suit: combo?.suit ?? 'spades',
+    })
+    setBurnFlash(true)
+
+    if (burnTimerRef.current) clearTimeout(burnTimerRef.current)
+    burnTimerRef.current = setTimeout(() => {
+      setBurnFlash(false)
+      setBurnInfo(null)
+      burnTimerRef.current = null
+    }, 3000)
+    // Timer is managed via ref — intentionally no cleanup return so React
+    // cannot cancel it when the second broadcast re-runs this effect.
+  }, [gameState.lastAction, gameState.players, gameState.presidentCombo, myPlayerId])
+
+  // Clear timers on unmount
+  useEffect(() => () => {
+    if (burnTimerRef.current) clearTimeout(burnTimerRef.current)
+    if (finishTimerRef.current) clearTimeout(finishTimerRef.current)
+    if (exchangeOverlayTimerRef.current) clearTimeout(exchangeOverlayTimerRef.current)
+  }, [])
+
+  useEffect(() => {
+    const active = gameState.presidentExchangePhase !== null
+    if (active && !exchangeWasActiveRef.current) {
+      exchangeWasActiveRef.current = true
+      setExchangeOverlay(true)
+      if (exchangeOverlayTimerRef.current) clearTimeout(exchangeOverlayTimerRef.current)
+      exchangeOverlayTimerRef.current = setTimeout(() => {
+        setExchangeOverlay(false)
+        exchangeOverlayTimerRef.current = null
+      }, 3500)
+    }
+    if (!active) exchangeWasActiveRef.current = false
+  }, [gameState.presidentExchangePhase])
+
+  useEffect(() => {
+    const idx = gameState.presidentFinishOrder.indexOf(myPlayerId)
+    if (idx === -1) {
+      prevFinishIdxRef.current = -1  // reset on new round
+      return
+    }
+    if (idx === prevFinishIdxRef.current) return
+    prevFinishIdxRef.current = idx
+
+    const totalPlayers = gameState.players.length
+    let role: string | null = null
+    if (idx === 0) role = 'president'
+    else if (idx === 1 && totalPlayers >= 4) role = 'vp'
+
+    setFinishBanner({ position: idx + 1, role })
+    if (finishTimerRef.current) clearTimeout(finishTimerRef.current)
+    finishTimerRef.current = setTimeout(() => {
+      setFinishBanner(null)
+      finishTimerRef.current = null
+    }, 3500)
+  }, [gameState.presidentFinishOrder, myPlayerId, gameState.players.length])
+
+  const combo = gameState.presidentCombo
+  const playPile = gameState.zones.find(z => z.id === 'play-pile')
+  const otherPlayers = gameState.players.filter(p => p.id !== myPlayerId)
+  const discardPhase = gameState.presidentDiscardPhase
+  const myDiscardEntry = discardPhase?.find(d => d.playerId === myPlayerId && !d.done) ?? null
+  const exchangePhase = gameState.presidentExchangePhase
+  const myExchangeEntry = exchangePhase?.find(e => e.playerId === myPlayerId) ?? null
+  const iAmGiver = exchangePhase?.some(e => e.recipientId === myPlayerId) ?? false
+
+  if (gameState.phase === 'round-over') {
+    return (
+      <PresidentResults
+        gameState={gameState}
+        myPlayerId={myPlayerId}
+        isHost={isHost}
+        onNextRound={() => send({ type: 'next_round' })}
+        onHome={onHome}
+      />
+    )
+  }
+
+  return (
+    <div className="flex flex-col w-full gap-3">
+
+      {burnFlash && (
+        <div
+          className="w-full py-2.5 rounded-xl text-center fade-in"
+          style={{
+            background: 'rgba(245,158,11,0.15)',
+            border: '1.5px solid rgba(245,158,11,0.5)',
+            boxShadow: '0 0 24px rgba(245,158,11,0.25)',
+          }}
+        >
+          <span className="font-black tracking-widest text-sm" style={{ color: 'var(--accent)' }}>
+            🔥 BURN
+          </span>
+          {burnInfo && (
+            <span className="text-sm ml-1.5" style={{ color: 'var(--text)' }}>
+              {' — '}
+              {burnInfo.rank === 'JKR' ? (
+                <>{burnInfo.ownerStr} <span style={{ color: '#fbbf24', fontWeight: 800 }}>Joker</span></>
+              ) : (
+                <>{burnInfo.ownerStr} <span style={{ color: SUIT_COLOR[burnInfo.suit] ?? 'inherit', fontWeight: 800 }}>
+                  {burnInfo.rank}{SUIT_SYMBOL[burnInfo.suit] ?? ''}
+                </span></>
+              )}
+              {' '}cleared the pile!
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Card exchange phase banner */}
+      {exchangePhase && (
+        <div
+          className="w-full rounded-xl px-4 py-3 fade-in"
+          style={{
+            background: 'rgba(139,92,246,0.08)',
+            border: '1.5px solid rgba(139,92,246,0.35)',
+          }}
+        >
+          <p className="text-xs font-black tracking-widest text-center mb-1" style={{ color: '#a78bfa' }}>
+            🔄 CARD EXCHANGE
+          </p>
+          {myExchangeEntry && !myExchangeEntry.done ? (
+            <>
+              <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+                You received <span style={{ color: '#a78bfa', fontWeight: 700 }}>{myExchangeEntry.receivedCardIds.length}</span> card{myExchangeEntry.receivedCardIds.length !== 1 ? 's' : ''} from the{' '}
+                <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{myExchangeEntry.giverRole === 'vb' ? 'Vice Bum' : 'Bum'}</span>.
+              </p>
+              <p className="text-xs text-center mt-1" style={{ color: '#a78bfa', fontWeight: 700 }}>
+                Select {myExchangeEntry.cardsOwed} card{myExchangeEntry.cardsOwed !== 1 ? 's' : ''} to return ↓
+              </p>
+            </>
+          ) : iAmGiver ? (
+            <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+              Your best card{exchangePhase.find(e => e.recipientId === myPlayerId)?.cardsOwed !== 1 ? 's were' : ' was'} taken. Waiting for the other player to return cards…
+            </p>
+          ) : (
+            <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+              Card exchange in progress…
+            </p>
+          )}
+          {/* Who still needs to act */}
+          <div className="flex flex-wrap justify-center gap-1.5 mt-2">
+            {exchangePhase.map(e => {
+              const p = gameState.players.find(pl => pl.id === e.playerId)
+              return (
+                <span key={e.playerId} className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+                  style={{
+                    background: e.done ? 'rgba(139,92,246,0.1)' : 'var(--surface-mid)',
+                    color: e.done ? '#a78bfa' : 'var(--text-muted)',
+                    border: '1px solid ' + (e.done ? 'rgba(139,92,246,0.3)' : 'var(--border)'),
+                    textDecoration: e.done ? 'line-through' : 'none',
+                  }}>
+                  {p?.id === myPlayerId ? 'You' : (p?.name ?? '?')}{e.done ? ' ✓' : ''}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Run discard phase banner */}
+      {discardPhase && (
+        <div
+          className="w-full rounded-xl px-4 py-3 fade-in"
+          style={{
+            background: 'rgba(34,197,94,0.08)',
+            border: '1.5px solid rgba(34,197,94,0.35)',
+          }}
+        >
+          <p className="text-xs font-black tracking-widest text-center mb-1" style={{ color: '#4ade80' }}>
+            🃏 RUN BONUS
+          </p>
+          {myDiscardEntry ? (
+            <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+              Discard up to <span style={{ color: '#4ade80', fontWeight: 700 }}>{myDiscardEntry.cardsNeeded}</span> card{myDiscardEntry.cardsNeeded !== 1 ? 's' : ''} from your hand, or skip — your choice.
+            </p>
+          ) : (
+            <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+              Waiting for others to discard…
+            </p>
+          )}
+          {/* Who still needs to act */}
+          <div className="flex flex-wrap justify-center gap-1.5 mt-2">
+            {discardPhase.map(d => {
+              const p = gameState.players.find(pl => pl.id === d.playerId)
+              return (
+                <span key={d.playerId} className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+                  style={{
+                    background: d.done ? 'rgba(74,222,128,0.1)' : 'var(--surface-mid)',
+                    color: d.done ? '#4ade80' : 'var(--text-muted)',
+                    border: '1px solid ' + (d.done ? 'rgba(74,222,128,0.3)' : 'var(--border)'),
+                    textDecoration: d.done ? 'line-through' : 'none',
+                  }}>
+                  {p?.name ?? '?'}{d.done ? ' ✓' : ''}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Opponents */}
+      {otherPlayers.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {otherPlayers.map(player => {
+            const isActive = gameState.currentTurnPlayerId === player.id
+            const hasPassed = gameState.presidentPassedIds.includes(player.id)
+            const finishIdx = gameState.presidentFinishOrder.indexOf(player.id)
+            const hasFinished = finishIdx !== -1
+            const handZone = gameState.zones.find(z => z.id === `hand-${player.id}`)
+            const cardCount = handZone?.cards.length ?? 0
+            const role = gameState.presidentRoles[player.id]
+
+            return (
+              <div
+                key={player.id}
+                className="flex items-center justify-between px-3 py-2 rounded-xl"
+                style={{
+                  background: isActive ? 'rgba(245,158,11,0.08)' : 'var(--surface)',
+                  border: '1px solid ' + (isActive ? 'rgba(245,158,11,0.4)' : 'var(--border)'),
+                  opacity: hasFinished ? 0.6 : 1,
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                    style={{
+                      background: isActive ? 'var(--accent)' : 'var(--surface-mid)',
+                      color: isActive ? '#000' : 'var(--text-muted)',
+                    }}
+                  >
+                    {player.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex flex-col leading-none">
+                    <span className="text-sm font-semibold" style={{ color: isActive ? 'var(--accent)' : 'var(--text)' }}>
+                      {player.name}{isActive ? ' ▶' : ''}
+                    </span>
+                    {role && (
+                      <span className="text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                        {ROLE_LABEL[role] ?? role}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {hasFinished ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      style={{ background: 'rgba(74,222,128,0.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)' }}>
+                      Done #{finishIdx + 1}
+                    </span>
+                  ) : hasPassed ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      style={{ background: 'var(--surface-mid)', color: 'var(--text-dim)', border: '1px solid var(--border)' }}>
+                      Passed
+                    </span>
+                  ) : (
+                    <span className="text-[10px] tabular-nums" style={{ color: 'var(--text-dim)' }}>
+                      {cardCount} card{cardCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Table combo */}
+      <div
+        className="flex flex-col items-center gap-3 py-4 px-4 rounded-2xl"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+      >
+        {/* Suit order reminder */}
+        <div className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>
+          <span className="font-bold" style={{ color: SUIT_COLOR.spades }}>♠</span>
+          <span>›</span>
+          <span className="font-bold" style={{ color: SUIT_COLOR.hearts }}>♥</span>
+          <span>›</span>
+          <span className="font-bold" style={{ color: SUIT_COLOR.clubs }}>♣</span>
+          <span>›</span>
+          <span className="font-bold" style={{ color: SUIT_COLOR.diamonds }}>♦</span>
+          <span className="ml-1.5 text-[10px]">suit order (high → low)</span>
+        </div>
+
+        {combo ? (
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>
+              Beat this{combo.maxSuitIsWild ? ' · wild suit' : ''}
+            </span>
+            {playPile && playPile.cards.length > 0 && (() => {
+              const CARD_W = 80
+              const CARD_H = 116
+              const OX = 20   // horizontal peek per card
+              const OY = 4    // vertical drop per card
+              const count = playPile.cards.length
+              return (
+                <div style={{
+                  position: 'relative',
+                  width: CARD_W + (count - 1) * OX,
+                  height: CARD_H + (count - 1) * OY,
+                }}>
+                  {playPile.cards.map((card, i) => (
+                    <div key={card.id} style={{
+                      position: 'absolute',
+                      left: i * OX,
+                      top: i * OY,
+                      zIndex: i,
+                    }}>
+                      <Card card={card} faceDown={false} size="lg" />
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+        ) : (
+          <div className="text-center">
+            <p className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>
+              Table is clear
+            </p>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+              Play any valid combo to start
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Exchange received-cards overlay — shown briefly when cards arrive */}
+      {exchangeOverlay && myExchangeEntry && (() => {
+        const myHand = gameState.zones.find(z => z.id === `hand-${myPlayerId}`)
+        const receivedCards = myExchangeEntry.receivedCardIds
+          .map(id => myHand?.cards.find(c => c.id === id))
+          .filter((c): c is NonNullable<typeof c> => c !== undefined)
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 810,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.6)', pointerEvents: 'none',
+          }}>
+            <div className="fade-in" style={{
+              background: 'var(--surface)', border: '2px solid #a78bfa',
+              borderRadius: 24, padding: '28px 36px', textAlign: 'center',
+              boxShadow: '0 12px 48px rgba(0,0,0,0.7)', minWidth: 220,
+            }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🔄</div>
+              <p style={{ color: '#a78bfa', fontWeight: 900, fontSize: 18, marginBottom: 6 }}>
+                Cards Received!
+              </p>
+              <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 14 }}>
+                From the {myExchangeEntry.giverRole === 'vb' ? 'Vice Bum' : 'Bum'}:
+              </p>
+              {receivedCards.length > 0 && (
+                <div className="flex gap-3 justify-center" style={{ marginBottom: 14 }}>
+                  {receivedCards.map(card => (
+                    <Card key={card.id} card={card} faceDown={false} size="lg" />
+                  ))}
+                </div>
+              )}
+              <p style={{ color: 'var(--text-dim)', fontSize: 11 }}>
+                Now choose {myExchangeEntry.cardsOwed} card{myExchangeEntry.cardsOwed !== 1 ? 's' : ''} to return ↓
+              </p>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Exchange lost-cards overlay — shown to bum/VB when their cards are taken */}
+      {exchangeOverlay && iAmGiver && !myExchangeEntry && (() => {
+        const myEntry = exchangePhase?.find(e => e.recipientId === myPlayerId)
+        if (!myEntry) return null
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 810,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.6)', pointerEvents: 'none',
+          }}>
+            <div className="fade-in" style={{
+              background: 'var(--surface)', border: '2px solid rgba(139,92,246,0.4)',
+              borderRadius: 24, padding: '28px 36px', textAlign: 'center',
+              boxShadow: '0 12px 48px rgba(0,0,0,0.7)', minWidth: 220,
+            }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>📤</div>
+              <p style={{ color: 'var(--text)', fontWeight: 900, fontSize: 18, marginBottom: 6 }}>
+                Cards Taken
+              </p>
+              <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                Your best {myEntry.cardsOwed} card{myEntry.cardsOwed !== 1 ? 's were' : ' was'} sent to the{' '}
+                {myEntry.giverRole === 'vb' ? 'Vice President' : 'President'}.
+              </p>
+              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 10 }}>
+                Waiting for them to return cards…
+              </p>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Finish overlay — shown only to the local player when they get out */}
+      {finishBanner && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 800,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(0,0,0,0.55)',
+          pointerEvents: 'none',
+        }}>
+          <div
+            className="fade-in"
+            style={{
+              background: 'var(--surface)',
+              border: '2px solid var(--accent)',
+              borderRadius: 24,
+              padding: '36px 48px',
+              textAlign: 'center',
+              boxShadow: '0 12px 48px rgba(0,0,0,0.7)',
+              minWidth: 240,
+            }}
+          >
+            <div style={{ fontSize: 56, lineHeight: 1, marginBottom: 12 }}>
+              {finishBanner.role === 'president' ? '👑' : finishBanner.role === 'vp' ? '🥈' : '✅'}
+            </div>
+            <p style={{ color: 'var(--accent)', fontWeight: 900, fontSize: 24, letterSpacing: 0.5 }}>
+              {finishBanner.role === 'president'
+                ? 'President!'
+                : finishBanner.role === 'vp'
+                  ? 'Vice President!'
+                  : `Finished ${ordinal(finishBanner.position)}!`}
+            </p>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 8 }}>
+              {finishBanner.role === 'president'
+                ? 'First out — you lead the pack 🎉'
+                : finishBanner.role === 'vp'
+                  ? 'Runner-up finish!'
+                  : 'You\'re out! Hang tight for the results…'}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PresidentResults({
+  gameState, myPlayerId, isHost, onNextRound, onHome,
+}: {
+  gameState: GameState
+  myPlayerId: string
+  isHost: boolean
+  onNextRound: () => void
+  onHome: () => void
+}) {
+  const ROLE_EMOJI: Record<string, string> = {
+    president: '👑', vp: '🥈', neutral: '😐', vb: '😬', bum: '💀',
+  }
+
+  const positions = gameState.presidentFinishOrder.map((id, i) => ({
+    id,
+    pos: i + 1,
+    player: gameState.players.find(p => p.id === id),
+    role: gameState.presidentRoles[id],
+  }))
+
+  return (
+    <div className="flex flex-col gap-3 w-full">
+      <div className="text-center">
+        <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--text-dim)' }}>Round Over</p>
+        <h3 className="font-black text-lg" style={{ color: 'var(--text)' }}>Final Standings</h3>
+      </div>
+      {positions.map(({ id, pos, player, role }) => {
+        const isMe = id === myPlayerId
+        return (
+          <div
+            key={id}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl"
+            style={{
+              background: isMe ? 'var(--accent-dim)' : 'var(--surface)',
+              border: '1px solid ' + (isMe ? 'rgba(245,158,11,0.4)' : 'var(--border)'),
+            }}
+          >
+            <span className="font-black text-xl w-6 text-center tabular-nums" style={{ color: 'var(--text-dim)' }}>
+              {pos}
+            </span>
+            <span className="text-2xl">{ROLE_EMOJI[role] ?? '•'}</span>
+            <div className="flex-1">
+              <span className="font-semibold text-sm" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
+                {isMe ? 'You' : (player?.name ?? '?')}
+              </span>
+            </div>
+            <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>
+              {ROLE_LABEL[role] ?? role}
+            </span>
+          </div>
+        )
+      })}
+      <div className="flex gap-2 mt-2">
+        {isHost && (
+          <button
+            onClick={onNextRound}
+            className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+            style={{ background: 'var(--accent)', color: '#000' }}
+          >
+            Play Again
+          </button>
+        )}
+        <button
+          onClick={onHome}
+          className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+          style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+        >
+          Home
+        </button>
+      </div>
+    </div>
+  )
+}

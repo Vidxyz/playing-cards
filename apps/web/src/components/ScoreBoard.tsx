@@ -7,10 +7,11 @@ interface Props {
   onClose: () => void
   onNextRound?: () => void
   onEndGame?: () => void
+  onHome?: () => void
   isHost?: boolean
 }
 
-export function ScoreBoard({ gameState, onClose, onNextRound, onEndGame, isHost }: Props) {
+export function ScoreBoard({ gameState, onClose, onNextRound, onEndGame, onHome, isHost }: Props) {
   const { players, teams, gameType, phase } = gameState
   const showTeams = teams.length > 0
   const isRoundOver = phase === 'round-over'
@@ -36,24 +37,33 @@ export function ScoreBoard({ gameState, onClose, onNextRound, onEndGame, isHost 
           <PlayerScores players={players} gameType={gameType} />
         )}
 
-        {isRoundOver && isHost && (onNextRound || onEndGame) && (
+        {isRoundOver && (
           <div className="flex gap-2 mt-5">
-            {onNextRound && (
+            {isHost && onNextRound && (
               <button
                 onClick={() => { onNextRound(); onClose() }}
                 className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
                 style={{ background: 'var(--accent)', color: '#000' }}
               >
-                Next Round
+                Play Again
               </button>
             )}
-            {onEndGame && (
+            {onHome && (
+              <button
+                onClick={onHome}
+                className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              >
+                Home
+              </button>
+            )}
+            {isHost && onEndGame && (
               <button
                 onClick={() => { onEndGame(); onClose() }}
                 className="px-4 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
                 style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}
               >
-                End Game
+                End
               </button>
             )}
           </div>

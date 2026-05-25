@@ -46,7 +46,7 @@ export default function RoomPage({ params }: { params: Promise<{ code: string }>
 
 function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSession }) {
   const router = useRouter()
-  const { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send } = useRoom(
+  const { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send, errorMsg } = useRoom(
     roomCode,
     session.playerId,
     session.name,
@@ -81,15 +81,24 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
             </div>
           ))}
         </div>
-        {isHost && (
+        <div className="flex gap-3 w-full max-w-xs">
+          {isHost && (
+            <button
+              onClick={() => send({ type: 'next_round' })}
+              className="flex-1 font-bold py-3 rounded-2xl transition-all active:scale-95"
+              style={{ background: 'var(--accent)', color: '#000' }}
+            >
+              Play Again
+            </button>
+          )}
           <button
-            onClick={() => send({ type: 'next_round' })}
-            className="font-bold px-8 py-3 rounded-2xl transition-all active:scale-95"
-            style={{ background: 'var(--accent)', color: '#000' }}
+            onClick={() => router.replace('/')}
+            className="flex-1 font-bold py-3 rounded-2xl transition-all active:scale-95"
+            style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
           >
-            Play Again
+            Home
           </button>
-        )}
+        </div>
       </div>
     )
   }
@@ -113,6 +122,7 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
         initialPeeks={initialPeeks}
         clearInitialPeeks={clearInitialPeeks}
         onLeave={() => router.replace('/')}
+        errorMsg={errorMsg}
       />
     </div>
   )

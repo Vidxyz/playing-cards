@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
-import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal } from './CambioTutorial'
 
 const GAMES: {
   type: GameType; label: string; desc: string; icon: string; min: number; max: number; comingSoon?: boolean
@@ -25,6 +25,7 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
   const [showCambioTutorial, setShowCambioTutorial] = useState(false)
   const [showBluffTutorial, setShowBluffTutorial] = useState(false)
   const [showEuchreTutorial, setShowEuchreTutorial] = useState(false)
+  const [showPresidentTutorial, setShowPresidentTutorial] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
   const isHost = me?.isHost ?? false
   const playerCount = gameState.players.length
@@ -126,6 +127,20 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
             })}
           </div>
         </Section>
+      )}
+
+      {/* President — how to play (visible to all players) */}
+      {selectedGame === 'president' && (
+        <div className="px-4 mb-4">
+          <button
+            onClick={() => setShowPresidentTutorial(true)}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 flex items-center justify-center gap-2"
+            style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+          >
+            <span>📖</span>
+            How to play President
+          </button>
+        </div>
       )}
 
       {/* Euchre — how to play (visible to all players) */}
@@ -328,6 +343,10 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
 
       {showEuchreTutorial && (
         <EuchreTutorialModal onClose={() => setShowEuchreTutorial(false)} />
+      )}
+
+      {showPresidentTutorial && (
+        <PresidentTutorialModal onClose={() => setShowPresidentTutorial(false)} />
       )}
 
       {/* Action */}

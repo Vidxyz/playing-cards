@@ -31,6 +31,9 @@ export type ClientEvent =
   | { type: 'cambio_stick'; zoneId: string }
   | { type: 'set_cambio_jokers'; count: number }
   | { type: 'set_bluff_jokers'; count: number }
+  // President-specific
+  | { type: 'president_run_discard'; cardIds: string[] }
+  | { type: 'president_exchange_return'; cardIds: string[] }
   // Euchre-specific
   | { type: 'euchre_order_up'; goAlone?: boolean }
   | { type: 'euchre_pass' }

@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || 'http://localhost:8787'
 
@@ -63,9 +64,12 @@ function HomeInner() {
 
   return (
     <main
-      className="min-h-screen flex flex-col items-center justify-center px-5"
+      className="min-h-screen flex flex-col items-center justify-center px-5 relative"
       style={{ background: 'var(--bg)' }}
     >
+      <div className="absolute top-4 right-4">
+        <ThemeToggle compact />
+      </div>
       <div className="w-full max-w-xs flex flex-col gap-5">
 
         {/* Logo */}

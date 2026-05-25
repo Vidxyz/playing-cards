@@ -100,6 +100,22 @@ export interface GameState {
   cambioJokers: number
   bluffJokers: number
   presidentDoubleDeck: boolean
+  // President-specific
+  presidentCombo: { rank: string; suit: Suit; count: number; maxSuitIsWild: boolean } | null
+  presidentFinishOrder: string[]
+  presidentPassedIds: string[]
+  presidentRoles: Record<string, string>
+  presidentRunPlays: { playerId: string; rank: string; count: number }[]
+  presidentDiscardPhase: { playerId: string; cardsNeeded: number; done: boolean }[] | null
+  // Between-round card exchange: president ← bum, vp ← vb
+  presidentExchangePhase: {
+    playerId: string       // president/vp — must return cards
+    recipientId: string    // bum/vb — receives returned cards
+    cardsOwed: number      // how many to return
+    done: boolean
+    receivedCardIds: string[]  // cards they received (for animation)
+    giverRole: string      // 'bum' | 'vb' — label for display
+  }[] | null
 }
 
 export interface GameAction {

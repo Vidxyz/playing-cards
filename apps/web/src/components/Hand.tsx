@@ -45,9 +45,10 @@ interface Props {
   isMyTurn?: boolean
   gameType?: string
   bluffActiveRank?: string | null
+  playLabel?: string
 }
 
-export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluffActiveRank }: Props) {
+export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluffActiveRank, playLabel }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [targetZoneId, setTargetZoneId] = useState<string>(targetZones[0]?.id || '')
   const [arrangeMode, setArrangeMode] = useState(false)
@@ -241,11 +242,13 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
               className="flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
               style={{ background: 'var(--accent)', color: '#000' }}
             >
-              {isBluffTarget
-                ? bluffActiveRank
-                  ? `Play ${selected.size} ${rankLabel(bluffActiveRank, selected.size)}`
-                  : `Declare & Play ${selected.size}`
-                : `Play ${selected.size} card${selected.size !== 1 ? 's' : ''}`}
+              {playLabel
+                ? `${playLabel} ${selected.size} card${selected.size !== 1 ? 's' : ''}`
+                : isBluffTarget
+                  ? bluffActiveRank
+                    ? `Play ${selected.size} ${rankLabel(bluffActiveRank, selected.size)}`
+                    : `Declare & Play ${selected.size}`
+                  : `Play ${selected.size} card${selected.size !== 1 ? 's' : ''}`}
             </button>
             <button
               onClick={() => setSelected(new Set())}

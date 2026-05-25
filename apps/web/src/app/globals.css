@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+/* ── Dark theme (default) ─────────────────────────────────── */
 :root {
   --bg:            #0c0f16;
   --surface:       #141924;
@@ -23,6 +24,80 @@
   --card-shadow:   0 3px 12px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.3);
   --card-border:   1px solid rgba(0,0,0,0.18);
   --radius-card:   10px;
+}
+
+/* ── Light theme ──────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:            #eef0f6;
+  --surface:       #ffffff;
+  --surface-mid:   #e4e7f0;
+  --surface-hi:    #d8dce8;
+  --border:        rgba(0,0,0,0.10);
+  --border-hi:     rgba(0,0,0,0.18);
+
+  --text:          #111827;
+  --text-muted:    rgba(17,24,39,0.55);
+  --text-dim:      rgba(17,24,39,0.32);
+
+  --accent:        #d97706;
+  --accent-dim:    rgba(217,119,6,0.12);
+  --accent-hi:     #f59e0b;
+
+  --red:           #dc2626;
+  --card-shadow:   0 3px 12px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.10);
+  --card-border:   1px solid rgba(0,0,0,0.12);
+}
+
+/* ── Accent: Blue ─────────────────────────────────────────── */
+[data-accent="blue"] {
+  --accent:     #3b82f6;
+  --accent-dim: rgba(59,130,246,0.15);
+  --accent-hi:  #60a5fa;
+}
+[data-accent="blue"][data-theme="light"] {
+  --accent:     #2563eb;
+  --accent-dim: rgba(37,99,235,0.12);
+  --accent-hi:  #3b82f6;
+}
+
+/* ── Accent: Green ────────────────────────────────────────── */
+[data-accent="green"] {
+  --accent:     #22c55e;
+  --accent-dim: rgba(34,197,94,0.15);
+  --accent-hi:  #4ade80;
+}
+[data-accent="green"][data-theme="light"] {
+  --accent:     #16a34a;
+  --accent-dim: rgba(22,163,74,0.12);
+  --accent-hi:  #22c55e;
+}
+
+/* ── Accent: Purple ───────────────────────────────────────── */
+[data-accent="purple"] {
+  --accent:     #a855f7;
+  --accent-dim: rgba(168,85,247,0.15);
+  --accent-hi:  #c084fc;
+}
+[data-accent="purple"][data-theme="light"] {
+  --accent:     #9333ea;
+  --accent-dim: rgba(147,51,234,0.12);
+  --accent-hi:  #a855f7;
+}
+
+/* ── Accent: Rose ─────────────────────────────────────────── */
+[data-accent="rose"] {
+  --accent:     #f43f5e;
+  --accent-dim: rgba(244,63,94,0.15);
+  --accent-hi:  #fb7185;
+}
+[data-accent="rose"][data-theme="light"] {
+  --accent:     #e11d48;
+  --accent-dim: rgba(225,29,72,0.12);
+  --accent-hi:  #f43f5e;
+}
+
+[data-theme="light"] .glass {
+  background: rgba(255,255,255,0.65);
 }
 
 * {

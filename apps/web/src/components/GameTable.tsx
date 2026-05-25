@@ -8,8 +8,11 @@ import { Zone as ZoneView } from './Zone'
 import { PlayerStrip } from './PlayerStrip'
 import { ScoreBoard } from './ScoreBoard'
 import { Card } from './Card'
-import { CambioTutorialModal, BluffTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal, PresidentTutorialModal } from './CambioTutorial'
 import { EuchreBoard } from './EuchreBoard'
+import { PresidentBoard } from './PresidentBoard'
+import { ThemeToggle } from './ThemeToggle'
+import { Toast } from './Toast'
 
 interface Props {
   gameState: GameState
@@ -20,15 +23,17 @@ interface Props {
   initialPeeks: PeekResult[]
   clearInitialPeeks: () => void
   onLeave: () => void
+  errorMsg?: string | null
 }
 
 const SUIT_SYMBOL: Record<string, string> = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }
 const SUIT_OPTS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs']
 
-export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults, initialPeeks, clearInitialPeeks, onLeave }: Props) {
+export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults, initialPeeks, clearInitialPeeks, onLeave, errorMsg }: Props) {
   const [showScores, setShowScores] = useState(false)
   const [showCambioTutorial, setShowCambioTutorial] = useState(false)
   const [showBluffTutorial, setShowBluffTutorial] = useState(false)
+  const [showPresidentTutorial, setShowPresidentTutorial] = useState(false)
   const [isBluffRevealing, setIsBluffRevealing] = useState(false)
   const [pilePickupToast, setPilePickupToast] = useState<{ playerName: string; cardCount: number; isMe: boolean } | null>(null)
   const [bluffPileFlash, setBluffPileFlash] = useState(false)
@@ -37,6 +42,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
 
   useEffect(() => {
     if (gameState.phase !== 'round-over') return
+    if (gameState.gameType === 'president') return  // PresidentBoard shows its own results
     // For Cambio: delay ScoreBoard so the card-flip reveal animation plays first
     const delay = gameState.gameType === 'cambio' ? 3000 : 0
     const t = setTimeout(() => setShowScores(true), delay)
@@ -54,6 +60,20 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId
   const gameType = gameState.gameType
   const myHasPassed = gameState.bluffPassedPlayerIds.includes(myPlayerId)
+  const presidentHasPassed = gameState.presidentPassedIds.includes(myPlayerId)
+  const presidentHasFinished = gameState.presidentFinishOrder.includes(myPlayerId)
+  const presidentDiscardEntry = gameState.presidentDiscardPhase?.find(d => d.playerId === myPlayerId && !d.done) ?? null
+  const isInDiscardPhase = presidentDiscardEntry !== null
+  const discardPhaseActive = gameState.presidentDiscardPhase !== null
+  const presidentExchangeEntry = gameState.presidentExchangePhase?.find(e => e.playerId === myPlayerId && !e.done) ?? null
+  const isInExchangePhase = presidentExchangeEntry !== null
+  const exchangePhaseActive = gameState.presidentExchangePhase !== null
+  // Enable hand only on your turn, or when it's your discard/exchange to make
+  const handIsMyTurn = gameType === 'president'
+    ? isInExchangePhase
+      || isInDiscardPhase
+      || (!exchangePhaseActive && !discardPhaseActive && isMyTurn && !presidentHasPassed && !presidentHasFinished)
+    : isMyTurn
 
   useEffect(() => {
     if (lastAction?.type === 'bluff_reveal') {
@@ -100,6 +120,14 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
 
   const handlePlayCards = useCallback((cardIds: string[], toZoneId: string, claim?: { rank: string }) => {
     send({ type: 'play_cards', cardIds, toZoneId, bluffClaim: claim })
+  }, [send])
+
+  const handleRunDiscard = useCallback((cardIds: string[]) => {
+    send({ type: 'president_run_discard', cardIds })
+  }, [send])
+
+  const handleExchangeReturn = useCallback((cardIds: string[]) => {
+    send({ type: 'president_exchange_return', cardIds })
   }, [send])
 
   const handleDraw = useCallback((toZoneId?: string) => {
@@ -188,7 +216,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             <span className="text-xs font-semibold self-center mr-1" style={{ color: 'var(--text-muted)' }}>
               R{gameState.roundNumber}
             </span>
-            {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && (
+            {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && gameType !== 'president' && (
               <TopBtn
                 onClick={() => !myHasPassed && send({ type: 'pass_turn' })}
                 disabled={myHasPassed}
@@ -202,12 +230,16 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             {gameType === 'bluff' && (
               <TopBtn onClick={() => setShowBluffTutorial(true)}>?</TopBtn>
             )}
+            {gameType === 'president' && (
+              <TopBtn onClick={() => setShowPresidentTutorial(true)}>?</TopBtn>
+            )}
             <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
-            {isHost && (
+            {isHost && gameType !== 'president' && (
               <TopBtn onClick={() => send({ type: 'next_round' })} accent>
                 Next Round
               </TopBtn>
             )}
+            <ThemeToggle compact />
           </div>
         </div>
         <PlayerStrip gameState={gameState} myPlayerId={myPlayerId} />
@@ -216,12 +248,20 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       {/* ── Table (shared zones + draw pile) ─────────── */}
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-3 overflow-y-auto">
 
-        {/* Turn indicator */}
-        {gameState.turnOrder.length > 0 && gameState.currentTurnPlayerId && (
+        {/* Turn indicator — hidden for president (board shows player statuses directly) */}
+        {gameState.turnOrder.length > 0 && gameState.currentTurnPlayerId && gameType !== 'president' && (
           <TurnBanner gameState={gameState} myPlayerId={myPlayerId} />
         )}
 
-        {gameType === 'euchre' ? (
+        {gameType === 'president' ? (
+          <PresidentBoard
+            gameState={gameState}
+            myPlayerId={myPlayerId}
+            isHost={isHost}
+            send={send}
+            onHome={onLeave}
+          />
+        ) : gameType === 'euchre' ? (
           <EuchreBoard
             gameState={gameState}
             myPlayerId={myPlayerId}
@@ -367,11 +407,20 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           <Hand
             key={zone.id}
             zone={zone}
-            onPlayCards={handlePlayCards}
+            onPlayCards={isInExchangePhase
+              ? (cardIds) => handleExchangeReturn(cardIds)
+              : isInDiscardPhase
+                ? (cardIds) => handleRunDiscard(cardIds)
+                : handlePlayCards}
             targetZones={playTargets}
-            isMyTurn={isMyTurn}
+            isMyTurn={handIsMyTurn}
             gameType={gameType ?? undefined}
             bluffActiveRank={gameState.bluffActiveRank}
+            playLabel={isInExchangePhase
+              ? `Return`
+              : isInDiscardPhase
+                ? 'Discard'
+                : undefined}
           />
         ))}
 
@@ -379,6 +428,12 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         <div className="flex gap-2 justify-center px-4 pt-1 pb-2">
           {gameType === 'poker' && !me?.isFolded && (
             <ActionPill onClick={() => send({ type: 'fold' })} danger>Fold</ActionPill>
+          )}
+          {gameType === 'president' && isInDiscardPhase && (
+            <ActionPill onClick={() => handleRunDiscard([])}>Skip</ActionPill>
+          )}
+          {gameType === 'president' && !exchangePhaseActive && !discardPhaseActive && isMyTurn && !presidentHasPassed && !presidentHasFinished && (
+            <ActionPill onClick={() => send({ type: 'pass_turn' })}>Pass</ActionPill>
           )}
         </div>
       </div>
@@ -391,6 +446,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           isHost={isHost}
           onNextRound={() => send({ type: 'next_round' })}
           onEndGame={() => send({ type: 'end_game' })}
+          onHome={onLeave}
         />
       )}
 
@@ -400,6 +456,10 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
 
       {showBluffTutorial && (
         <BluffTutorialModal onClose={() => setShowBluffTutorial(false)} />
+      )}
+
+      {showPresidentTutorial && (
+        <PresidentTutorialModal onClose={() => setShowPresidentTutorial(false)} />
       )}
 
       {gameState.bluffReveal && (
@@ -459,6 +519,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           </div>
         </div>
       )}
+
+      {errorMsg && <Toast message={errorMsg} />}
     </div>
   )
 }
