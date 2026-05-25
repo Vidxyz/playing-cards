@@ -1039,7 +1039,10 @@ export class RoomDO implements DurableObject {
     gs.bluffReveal = null
     gs.bluffActiveRank = null
     gs.bluffHistory = []
-    gs.currentTurnPlayerId = recipientId  // person who picks up plays next
+    // Winner of the challenge starts the next round:
+    //   bluff succeeded → caller was right → caller goes next
+    //   bluff failed    → submitter was right → submitter goes next
+    gs.currentTurnPlayerId = reveal.bluffSucceeded ? reveal.callerId : reveal.submitterId
     gs.lastAction = {
       type: 'move',
       playerId: recipientId,
