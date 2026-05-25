@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Card-table green background -->
+  <rect width="32" height="32" rx="7" fill="#112713"/>
+
+  <!-- Playing card with amber border -->
+  <rect x="8" y="4" width="16" height="24" rx="2.5"
+        fill="#faf7f0" stroke="#f59e0b" stroke-width="1.5"/>
+
+  <!-- Spade symbol (dark navy) assembled from primitives -->
+
+  <!-- Left shoulder lobe -->
+  <circle cx="13" cy="15" r="3.6" fill="#1c1830"/>
+  <!-- Right shoulder lobe -->
+  <circle cx="19" cy="15" r="3.6" fill="#1c1830"/>
+  <!-- Top-point triangle (overlaps circles to close the V) -->
+  <polygon points="16,9 9.5,15.5 22.5,15.5" fill="#1c1830"/>
+
+  <!-- Stem -->
+  <rect x="14.5" y="18" width="3" height="4" rx="0.5" fill="#1c1830"/>
+  <!-- Base flare (trapezoid wider than stem) -->
+  <polygon points="11.5,22 20.5,22 18.5,19.5 13.5,19.5" fill="#1c1830"/>
+</svg>
