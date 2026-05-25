@@ -5,12 +5,12 @@ import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
 import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal } from './CambioTutorial'
 
 const GAMES: {
-  type: GameType; label: string; desc: string; icon: string; min: number; max: number
+  type: GameType; label: string; desc: string; icon: string; min: number; max: number; comingSoon?: boolean
 }[] = [
-  { type: 'president', label: 'President',  icon: '👑', desc: 'Get rid of all cards first',       min: 3, max: 8 },
+  { type: 'president', label: 'President',  icon: '👑', desc: 'Get rid of all cards first',       min: 2, max: 8 },
   { type: 'bluff',     label: 'Bluff',      icon: '🎭', desc: 'Lie freely, get caught, take pile', min: 3, max: 8 },
-  { type: 'poker',     label: 'Poker',      icon: '♠',  desc: "Texas Hold'em",                    min: 2, max: 9 },
-  { type: 'blackjack', label: 'Blackjack',  icon: '21', desc: 'Beat the dealer to 21',             min: 2, max: 7 },
+  { type: 'poker',     label: 'Poker',      icon: '♠',  desc: "Texas Hold'em",                    min: 2, max: 9, comingSoon: true },
+  { type: 'blackjack', label: 'Blackjack',  icon: '21', desc: 'Beat the dealer to 21',             min: 2, max: 7, comingSoon: true },
   { type: 'euchre',    label: 'Euchre',     icon: '🤝', desc: '2v2 trick-taking',                  min: 4, max: 4 },
   { type: 'cambio',    label: 'Cambio',     icon: '🔄', desc: 'Lowest total wins — swap & peek',   min: 2, max: 6 },
 ]
@@ -97,16 +97,19 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
               const tooMany = playerCount > game.max
               const playerMismatch = tooFew || tooMany
               const active = selectedGame === game.type
+              const locked = game.comingSoon ?? false
 
               return (
                 <button
                   key={game.type}
-                  onClick={() => send({ type: 'set_game', gameType: game.type })}
+                  disabled={locked}
+                  onClick={() => !locked && send({ type: 'set_game', gameType: game.type })}
                   className="flex flex-col items-start text-left rounded-xl p-3 transition-all active:scale-95"
                   style={{
                     background: active ? 'var(--accent-dim)' : 'var(--surface)',
                     border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
-                    cursor: 'pointer',
+                    opacity: locked ? 0.45 : 1,
+                    cursor: locked ? 'not-allowed' : 'pointer',
                   }}
                 >
                   <span className="text-xl mb-1.5">{game.icon}</span>
@@ -114,9 +117,9 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
                     {game.label}
                   </span>
                   <span className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{game.desc}</span>
-                  <span className="text-[10px] mt-1" style={{ color: playerMismatch ? '#f87171' : 'var(--text-dim)' }}>
-                    {game.min === game.max ? `${game.min} players` : `${game.min}–${game.max} players`}
-                    {active && playerMismatch && (tooFew ? ` · need ${game.min - playerCount} more` : ` · too many`)}
+                  <span className="text-[10px] mt-1" style={{ color: locked ? 'var(--text-dim)' : playerMismatch ? '#f87171' : 'var(--text-dim)' }}>
+                    {locked ? 'Coming soon' : game.min === game.max ? `${game.min} players` : `${game.min}–${game.max} players`}
+                    {!locked && active && playerMismatch && (tooFew ? ` · need ${game.min - playerCount} more` : ` · too many`)}
                   </span>
                 </button>
               )

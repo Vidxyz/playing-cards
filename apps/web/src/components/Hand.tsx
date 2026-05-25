@@ -7,6 +7,10 @@ import { Card } from './Card'
 const RANK_ORDER: Record<string, number> = Object.fromEntries(
   ['2','3','4','5','6','7','8','9','10','J','Q','K','A'].map((r, i) => [r, i])
 )
+// President: 3 is lowest, 2 is highest power card
+const PRESIDENT_RANK_ORDER: Record<string, number> = Object.fromEntries(
+  ['3','4','5','6','7','8','9','10','J','Q','K','A','2'].map((r, i) => [r, i])
+)
 const RANK_NAMES: Record<string, [string, string]> = {
   'A': ['Ace', 'Aces'], 'J': ['Jack', 'Jacks'],
   'Q': ['Queen', 'Queens'], 'K': ['King', 'Kings'], 'JKR': ['Joker', 'Jokers'],
@@ -17,9 +21,17 @@ function rankLabel(rank: string, count: number): string {
   return count !== 1 ? `${rank}s` : rank
 }
 
-function sortByRank(cards: CardType[]): string[] {
-  return [...cards].sort((a, b) => (RANK_ORDER[a.rank] ?? 99) - (RANK_ORDER[b.rank] ?? 99)).map(c => c.id)
+function sortByRank(cards: CardType[], order = RANK_ORDER): string[] {
+  return [...cards].sort((a, b) => (order[a.rank] ?? 99) - (order[b.rank] ?? 99)).map(c => c.id)
 }
+
+function sortedForGame(cards: CardType[], gameType?: string): string[] {
+  if (gameType === 'president') return sortByRank(cards, PRESIDENT_RANK_ORDER)
+  if (gameType === 'bluff') return sortByRank(cards)
+  return cards.map(c => c.id)
+}
+
+const AUTO_SORT_GAMES = new Set(['bluff', 'president'])
 
 // Rank picker rows shown as actual card visuals
 const PICKER_RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
@@ -41,7 +53,7 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
   const [arrangeMode, setArrangeMode] = useState(false)
   const [movingId, setMovingId] = useState<string | null>(null)
   const [customOrder, setCustomOrder] = useState<string[]>(() =>
-    gameType === 'bluff' ? sortByRank(zone.cards) : zone.cards.map(c => c.id)
+    sortedForGame(zone.cards, gameType)
   )
   // Bluff declaration
   const [declaring, setDeclaring] = useState(false)
@@ -58,8 +70,8 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
   }, [])
 
   useEffect(() => {
-    if (gameType === 'bluff') {
-      setCustomOrder(sortByRank(zone.cards))
+    if (AUTO_SORT_GAMES.has(gameType ?? '')) {
+      setCustomOrder(sortedForGame(zone.cards, gameType))
     } else {
       const serverIds = zone.cards.map(c => c.id)
       setCustomOrder(prev => {

@@ -99,6 +99,7 @@ export interface GameState {
   cambioPeekSwapTarget: { cardId: string; zoneId: string } | null
   cambioJokers: number
   bluffJokers: number
+  presidentDoubleDeck: boolean
 }
 
 export interface GameAction {

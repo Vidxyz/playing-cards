@@ -105,6 +105,7 @@ export class RoomDO implements DurableObject {
           cambioPeekSwapTarget: null,
           cambioJokers: 2,
           bluffJokers: 0,
+          presidentDoubleDeck: false,
         }
         await this.saveState(gs)
         await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS)
@@ -413,6 +414,7 @@ export class RoomDO implements DurableObject {
         cambioPeekSwapTarget: null,
         cambioJokers: 2,
         bluffJokers: 0,
+        presidentDoubleDeck: false,
       }
     }
 
@@ -459,12 +461,16 @@ export class RoomDO implements DurableObject {
 
     gs.phase = 'dealing'
 
-    // Build and shuffle deck (inject joker count for Cambio and Bluff)
+    // Build and shuffle deck (inject joker count for Cambio and Bluff; double deck for President 5+)
+    const useDoubleDeck = gs.gameType === 'president' && gs.players.length > 4
+    gs.presidentDoubleDeck = useDoubleDeck
     const deckFilter = gs.gameType === 'cambio'
       ? { ...config.deckFilter, jokerCount: gs.cambioJokers }
       : gs.gameType === 'bluff'
         ? { ...config.deckFilter, jokerCount: gs.bluffJokers }
-        : config.deckFilter
+        : gs.gameType === 'president' && useDoubleDeck
+          ? { ...config.deckFilter, copies: 2 }
+          : config.deckFilter
     const deck = shuffle(buildDeck(deckFilter))
 
     // Build zones from templates

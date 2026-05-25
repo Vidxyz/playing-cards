@@ -32,6 +32,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const [isBluffRevealing, setIsBluffRevealing] = useState(false)
   const [pilePickupToast, setPilePickupToast] = useState<{ playerName: string; cardCount: number; isMe: boolean } | null>(null)
   const [bluffPileFlash, setBluffPileFlash] = useState(false)
+  const [showDoubleDeckToast, setShowDoubleDeckToast] = useState(false)
   const bluffPileCountRef = useRef(0)
 
   useEffect(() => {
@@ -61,6 +62,15 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       return () => clearTimeout(t)
     }
   }, [lastAction])
+
+  // Double-deck toast for President
+  useEffect(() => {
+    if (gameState.gameType !== 'president' || !gameState.presidentDoubleDeck) return
+    if (gameState.phase !== 'playing') return
+    setShowDoubleDeckToast(true)
+    const t = setTimeout(() => setShowDoubleDeckToast(false), 4000)
+    return () => clearTimeout(t)
+  }, [gameState.phase, gameState.presidentDoubleDeck, gameState.gameType])
 
   // Bluff pile pickup animation
   useEffect(() => {
@@ -399,6 +409,26 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           myPlayerId={myPlayerId}
           onResolve={() => send({ type: 'resolve_bluff' })}
         />
+      )}
+
+      {showDoubleDeckToast && (
+        <div className="fixed top-4 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+          <div
+            className="fade-in flex items-center gap-3 px-4 py-3 rounded-2xl"
+            style={{
+              background: 'rgba(0,0,0,0.88)',
+              border: '1.5px solid rgba(245,158,11,0.4)',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <span style={{ fontSize: 20 }}>🃏🃏</span>
+            <div>
+              <div className="text-sm font-bold" style={{ color: 'var(--accent)' }}>Two decks in play</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>5+ players — duplicate cards are possible</div>
+            </div>
+          </div>
+        </div>
       )}
 
       {pilePickupToast && (

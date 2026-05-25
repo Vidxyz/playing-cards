@@ -6,7 +6,7 @@ export const GAME_CONFIGS: Record<string, GameConfig> = {
     gameType: 'president',
     label: 'President',
     description: 'Get rid of all your cards first. Play higher combos to beat the pile.',
-    minPlayers: 3,
+    minPlayers: 2,
     maxPlayers: 8,
     deckFilter: {},
     cardsPerPlayer: 'all',
