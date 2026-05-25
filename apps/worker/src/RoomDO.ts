@@ -176,44 +176,131 @@ export class RoomDO implements DurableObject {
     const player = gs.players.find(p => p.id === playerId)
     if (!player) return
 
+    // Host leaves → terminate the entire room
+    if (player.isHost) {
+      await this.broadcast(
+        { type: 'kicked', reason: `${player.name} (host) left — room closed` },
+        null,
+      )
+      await this.state.storage.deleteAll()
+      return
+    }
+
     player.isConnected = false
 
-    if (gs.phase === 'playing' || gs.phase === 'round-over') {
-      const connectedCount = gs.players.filter(p => p.isConnected).length
-      const config = gs.gameType ? getConfig(gs.gameType) : null
-      const minRequired = config?.minPlayers ?? 2
+    // Not in an active game — just mark disconnected and broadcast
+    if (gs.phase !== 'playing' && gs.phase !== 'round-over') {
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
 
-      if (connectedCount < minRequired) {
-        await this.broadcast({
-          type: 'kicked',
-          reason: `${player.name} left — not enough players to continue`,
-        }, null)
-        await this.state.storage.deleteAll()
-        return
-      }
+    // In an active game: pull the player out of the turn order
+    const wasTheirTurn = gs.phase === 'playing' && gs.currentTurnPlayerId === playerId
+    const oldTurnIdx   = gs.turnOrder.indexOf(playerId)
+    gs.turnOrder = gs.turnOrder.filter(id => id !== playerId)
 
-      // Enough players remain — advance turn if it was this player's turn
-      if (gs.phase === 'playing' && gs.currentTurnPlayerId === playerId) {
-        if (gs.gameType === 'blackjack') {
-          if (!gs.blackjackStood.includes(playerId)) gs.blackjackStood.push(playerId)
-          if (gs.blackjackSplits.includes(playerId) && !gs.blackjackMainHandDone.includes(playerId)) {
-            gs.blackjackMainHandDone.push(playerId)
-          }
-          if (this.allBlackjackPlayersDone(gs)) {
-            await this.saveState(gs)
-            await this.broadcastState(gs)
-            await this.handleBlackjackDealerPlay(gs)
-            return
-          }
-          this.advanceTurnBlackjack(gs)
-        } else {
-          this.advanceTurn(gs)
+    // Game-specific state cleanup (may advance gs.phase to 'round-over')
+    this.handlePlayerLeave(gs, player)
+
+    // Check whether enough connected players remain for the next round
+    const remainingConnected = gs.players.filter(p => p.isConnected).length
+    // Euchre needs exactly 4 (teams); Blackjack works with 1 (vs computer); others need ≥ 2
+    const minContinue = gs.gameType === 'euchre' ? 4 : gs.gameType === 'blackjack' ? 1 : 2
+    if (remainingConnected < minContinue) {
+      await this.broadcast(
+        { type: 'kicked', reason: `${player.name} left — not enough players to continue` },
+        null,
+      )
+      await this.state.storage.deleteAll()
+      return
+    }
+
+    // Advance turn if it was their turn and we are still in the playing phase
+    if (wasTheirTurn && gs.phase === 'playing' && gs.turnOrder.length > 0) {
+      if (gs.gameType === 'blackjack') {
+        if (this.allBlackjackPlayersDone(gs)) {
+          await this.saveState(gs)
+          await this.broadcastState(gs)
+          await this.handleBlackjackDealerPlay(gs)
+          return
         }
+        this.advanceTurnBlackjack(gs)
+      } else {
+        // The player has been removed from turnOrder; the player who was sitting
+        // at oldTurnIdx is now the natural "next" — clamp with modulo for wrap-around.
+        const nextIdx = gs.turnOrder.length > 0
+          ? oldTurnIdx % gs.turnOrder.length
+          : 0
+        gs.currentTurnPlayerId = gs.turnOrder[nextIdx] ?? null
       }
     }
 
     await this.saveState(gs)
     await this.broadcastState(gs)
+  }
+
+  private handlePlayerLeave(gs: GameState, player: Player): void {
+    const pid = player.id
+
+    if (gs.gameType === 'president') {
+      gs.presidentPassedIds = gs.presidentPassedIds.filter(id => id !== pid)
+
+      // Count them as having finished at their current position
+      if (!gs.presidentFinishOrder.includes(pid)) {
+        gs.presidentFinishOrder.push(pid)
+      }
+
+      // Auto-complete any pending exchange entry they owe
+      if (gs.presidentExchangePhase) {
+        const entry = gs.presidentExchangePhase.find(e => e.playerId === pid && !e.done)
+        if (entry) {
+          entry.done = true
+          if (gs.presidentExchangePhase.every(e => e.done)) gs.presidentExchangePhase = null
+        }
+      }
+
+      // Auto-complete any pending discard entry
+      if (gs.presidentDiscardPhase) {
+        const entry = gs.presidentDiscardPhase.find(d => d.playerId === pid && !d.done)
+        if (entry) {
+          entry.done = true
+          if (gs.presidentDiscardPhase.every(d => d.done)) gs.presidentDiscardPhase = null
+        }
+      }
+
+      // If only one (or zero) active players remain, end the round
+      if (gs.turnOrder.length <= 1 && gs.phase === 'playing') {
+        for (const p of gs.players) {
+          if (!gs.presidentFinishOrder.includes(p.id)) gs.presidentFinishOrder.push(p.id)
+        }
+        gs.presidentRoles = assignRoles(gs.presidentFinishOrder, gs.players.length)
+        gs.phase = 'round-over'
+      }
+
+    } else if (gs.gameType === 'bluff') {
+      // Keep pass-count accurate
+      if (gs.bluffPassedPlayerIds.includes(pid)) {
+        gs.bluffPassedPlayerIds = gs.bluffPassedPlayerIds.filter(id => id !== pid)
+        gs.bluffPassCount = gs.bluffPassedPlayerIds.length
+      }
+
+      // If all remaining players (other than the last submitter) have now passed, clear the pile
+      if (gs.lastBluffBatch) {
+        const others = gs.turnOrder.filter(id => id !== gs.lastBluffBatch!.submitterId)
+        const allPassed = others.length === 0 || others.every(id => gs.bluffPassedPlayerIds.includes(id))
+        if (allPassed) this.handleBluffPassClear(gs, pid)
+      }
+
+    } else if (gs.gameType === 'blackjack') {
+      if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
+      if (gs.blackjackSplits.includes(pid) && !gs.blackjackMainHandDone.includes(pid)) {
+        gs.blackjackMainHandDone.push(pid)
+      }
+
+    } else if (gs.gameType === 'poker') {
+      player.isFolded = true
+    }
   }
 
   async alarm(): Promise<void> {
@@ -559,6 +646,11 @@ export class RoomDO implements DurableObject {
 
     const config = getConfig(gs.gameType)
     if (!config) return
+
+    // Permanently remove any player who left — they won't participate in this round
+    gs.players = gs.players.filter(p => p.isConnected)
+    // Re-index seats so downstream logic sees a clean 0-based sequence
+    gs.players.forEach((p, i) => { p.seatIndex = i })
 
     gs.phase = 'dealing'
 

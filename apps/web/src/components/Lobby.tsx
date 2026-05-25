@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
-import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal } from './CambioTutorial'
 
 const GAMES: {
   type: GameType; label: string; desc: string; icon: string; min: number; max: number; comingSoon?: boolean
@@ -26,6 +26,8 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
   const [showBluffTutorial, setShowBluffTutorial] = useState(false)
   const [showEuchreTutorial, setShowEuchreTutorial] = useState(false)
   const [showPresidentTutorial, setShowPresidentTutorial] = useState(false)
+  const [showBlackjackTutorial, setShowBlackjackTutorial] = useState(false)
+  const [showPokerTutorial, setShowPokerTutorial] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
 
@@ -214,6 +216,34 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
           >
             <span>📖</span>
             How to play Bluff
+          </button>
+        </div>
+      )}
+
+      {/* Blackjack — how to play (visible to all players) */}
+      {selectedGame === 'blackjack' && (
+        <div className="px-4 mb-4">
+          <button
+            onClick={() => setShowBlackjackTutorial(true)}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 flex items-center justify-center gap-2"
+            style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+          >
+            <span>📖</span>
+            How to play Blackjack
+          </button>
+        </div>
+      )}
+
+      {/* Poker — how to play (visible to all players) */}
+      {selectedGame === 'poker' && (
+        <div className="px-4 mb-4">
+          <button
+            onClick={() => setShowPokerTutorial(true)}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 flex items-center justify-center gap-2"
+            style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+          >
+            <span>📖</span>
+            How to play Poker
           </button>
         </div>
       )}
@@ -425,6 +455,14 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
 
       {showPresidentTutorial && (
         <PresidentTutorialModal onClose={() => setShowPresidentTutorial(false)} />
+      )}
+
+      {showBlackjackTutorial && (
+        <BlackjackTutorialModal onClose={() => setShowBlackjackTutorial(false)} />
+      )}
+
+      {showPokerTutorial && (
+        <PokerTutorialModal onClose={() => setShowPokerTutorial(false)} />
       )}
 
       {/* Action */}
