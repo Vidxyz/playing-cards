@@ -18,11 +18,24 @@ function HomeInner() {
   const [mode, setMode] = useState<'home' | 'join'>('home')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [kickedMsg, setKickedMsg] = useState<string | null>(null)
 
   useEffect(() => {
     const join = searchParams.get('join')
     if (join) { setJoinCode(join.toUpperCase()); setMode('join') }
   }, [searchParams])
+
+  useEffect(() => {
+    try {
+      const msg = sessionStorage.getItem('kicked_reason')
+      if (msg) {
+        sessionStorage.removeItem('kicked_reason')
+        setKickedMsg(msg)
+        const t = setTimeout(() => setKickedMsg(null), 6000)
+        return () => clearTimeout(t)
+      }
+    } catch {}
+  }, [])
 
   async function createRoom() {
     if (!name.trim()) { setError('Enter your name first'); return }
@@ -71,6 +84,27 @@ function HomeInner() {
         <ThemeToggle compact />
       </div>
       <div className="w-full max-w-xs flex flex-col gap-5">
+
+        {/* Kicked / disconnect notification */}
+        {kickedMsg && (
+          <div
+            className="card-slide flex items-start gap-2.5 rounded-2xl px-4 py-3"
+            style={{ background: 'rgba(229,62,62,0.1)', border: '1px solid rgba(229,62,62,0.28)', color: '#fc8181' }}
+          >
+            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-sm font-semibold leading-snug" style={{ color: '#fc8181' }}>{kickedMsg}</span>
+            </div>
+            <button
+              onClick={() => setKickedMsg(null)}
+              className="ml-auto flex-shrink-0 text-xs"
+              style={{ color: 'rgba(252,129,129,0.5)', lineHeight: 1 }}
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Logo */}
         <div className="text-center mb-2">

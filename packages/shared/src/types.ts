@@ -97,6 +97,10 @@ export interface GameState {
   blackjackBets: Record<string, number>
   blackjackStood: string[]
   blackjackResults: Record<string, 'win' | 'blackjack' | 'push' | 'lose'> | null
+  blackjackSplits: string[]           // playerIds who have split this hand
+  blackjackMainHandDone: string[]     // playerIds done with their main hand (now on split hand)
+  blackjackSplitBets: Record<string, number>
+  blackjackSplitResults: Record<string, 'win' | 'blackjack' | 'push' | 'lose'> | null
   // Cambio-specific
   cambioDrawn: { card: Card; fromDiscard: boolean } | null
   cambioPower: 'peek-own' | 'peek-opponent' | 'blind-swap' | 'peek-swap' | 'peek-swap-ready' | null

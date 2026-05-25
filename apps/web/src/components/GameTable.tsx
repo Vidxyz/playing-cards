@@ -2,16 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { GameState, ClientEvent, GameAction, Zone, Suit, BluffReveal, Player, Card as CardType } from '@playing-cards/shared'
+import { rankName } from '@playing-cards/shared'
 import type { PeekResult } from '@/hooks/useRoom'
 import { Hand } from './Hand'
 import { Zone as ZoneView } from './Zone'
 import { PlayerStrip } from './PlayerStrip'
 import { ScoreBoard } from './ScoreBoard'
 import { Card } from './Card'
-import { CambioTutorialModal, BluffTutorialModal, PresidentTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal } from './CambioTutorial'
 import { EuchreBoard } from './EuchreBoard'
 import { PresidentBoard } from './PresidentBoard'
 import { PokerBoard } from './PokerBoard'
+import { BlackjackBoard, bjHandValue, BJ_RESULT_LABEL, BJ_RESULT_COLOR, ChipSvg, ChipStack } from './BlackjackBoard'
 import { ThemeToggle } from './ThemeToggle'
 import { Toast } from './Toast'
 
@@ -29,12 +31,20 @@ interface Props {
 
 const SUIT_SYMBOL: Record<string, string> = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }
 const SUIT_OPTS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs']
+const GAME_LABEL: Record<string, string> = {
+  blackjack: 'Blackjack',
+  president: 'President',
+  poker: 'Poker',
+  euchre: 'Euchre',
+  cambio: 'Cambio',
+  bluff: 'Bluff',
+}
+// Games that manage their own round-over results screen
+const GAMES_WITH_OWN_RESULTS = new Set(['president', 'poker', 'blackjack'])
 
 export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults, initialPeeks, clearInitialPeeks, onLeave, errorMsg }: Props) {
   const [showScores, setShowScores] = useState(false)
-  const [showCambioTutorial, setShowCambioTutorial] = useState(false)
-  const [showBluffTutorial, setShowBluffTutorial] = useState(false)
-  const [showPresidentTutorial, setShowPresidentTutorial] = useState(false)
+  const [showTutorialFor, setShowTutorialFor] = useState<string | null>(null)
   const [isBluffRevealing, setIsBluffRevealing] = useState(false)
   const [pilePickupToast, setPilePickupToast] = useState<{ playerName: string; cardCount: number; isMe: boolean } | null>(null)
   const [bluffPileFlash, setBluffPileFlash] = useState(false)
@@ -43,10 +53,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
 
   useEffect(() => {
     if (gameState.phase !== 'round-over') return
-    if (gameState.gameType === 'president') return  // PresidentBoard shows its own results
-    if (gameState.gameType === 'poker') return  // PokerBoard shows its own results
-    if (gameState.gameType === 'blackjack') return  // BlackjackSection shows its own results
-    // For Cambio: delay ScoreBoard so the card-flip reveal animation plays first
+    if (gameState.gameType && GAMES_WITH_OWN_RESULTS.has(gameState.gameType)) return
     const delay = gameState.gameType === 'cambio' ? 3000 : 0
     const t = setTimeout(() => setShowScores(true), delay)
     return () => clearTimeout(t)
@@ -199,12 +206,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             {gameType && (
               <span className="text-[10px] font-bold uppercase tracking-widest"
                 style={{ color: 'var(--text-muted)' }}>
-                {gameType === 'blackjack' ? 'Blackjack'
-                  : gameType === 'president' ? 'President'
-                  : gameType === 'poker' ? 'Poker'
-                  : gameType === 'euchre' ? 'Euchre'
-                  : gameType === 'cambio' ? 'Cambio'
-                  : 'Bluff'}
+                {GAME_LABEL[gameType] ?? gameType}
               </span>
             )}
             {gameState.trumpSuit && (
@@ -227,14 +229,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                 {gameType === 'bluff' && myHasPassed ? 'Passed' : 'Pass'}
               </TopBtn>
             )}
-            {gameType === 'cambio' && (
-              <TopBtn onClick={() => setShowCambioTutorial(true)}>?</TopBtn>
-            )}
-            {gameType === 'bluff' && (
-              <TopBtn onClick={() => setShowBluffTutorial(true)}>?</TopBtn>
-            )}
-            {gameType === 'president' && (
-              <TopBtn onClick={() => setShowPresidentTutorial(true)}>?</TopBtn>
+            {(gameType === 'cambio' || gameType === 'bluff' || gameType === 'president' || gameType === 'blackjack' || gameType === 'poker') && (
+              <TopBtn onClick={() => setShowTutorialFor(gameType)}>?</TopBtn>
             )}
             <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
             {isHost && gameType !== 'president' && gameType !== 'poker' && gameType !== 'blackjack' && (
@@ -292,7 +288,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             showScores={showScores}
           />
         ) : gameType === 'blackjack' ? (
-          <BlackjackSection
+          <BlackjackBoard
             gameState={gameState}
             myPlayerId={myPlayerId}
             isHost={isHost}
@@ -369,56 +365,163 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       {/* ── My hand (hidden for Cambio/Euchre/Poker) ── */}
       {gameType !== 'cambio' && gameType !== 'euchre' && gameType !== 'poker' && (
       <div className="flex-shrink-0 pb-safe" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
-        {/* Your turn CTA — blackjack shows Hit/Stand instead */}
-        {gameType === 'blackjack' ? (
-          <div className="px-4 pt-2 pb-2 flex flex-col gap-2">
-            {/* Chip info */}
-            {gameState.blackjackChips && myPlayerId in gameState.blackjackChips && (
-              <div className="flex justify-between text-[10px]" style={{ color: 'var(--text-dim)' }}>
-                <span>{gameState.blackjackChips[myPlayerId]} chips</span>
-                <span>Bet: {gameState.blackjackBets?.[myPlayerId] ?? 0}</span>
-              </div>
-            )}
-            {gameState.phase === 'round-over' && gameState.blackjackResults?.[myPlayerId] ? (
-              <div className="w-full py-2 rounded-xl text-center"
-                style={{ background: 'var(--surface-hi)', border: '1px solid var(--border-hi)' }}>
-                <span className="font-black text-sm tracking-widest"
-                  style={{ color: BJ_RESULT_COLOR[gameState.blackjackResults[myPlayerId]] }}>
-                  {BJ_RESULT_LABEL[gameState.blackjackResults[myPlayerId]]}
-                </span>
-              </div>
-            ) : me?.isFolded ? (
-              <div className="w-full py-2 rounded-xl text-center"
-                style={{ background: 'rgba(229,62,62,0.12)', border: '1px solid rgba(229,62,62,0.25)' }}>
-                <span className="font-black text-sm tracking-widest" style={{ color: '#fc8181' }}>BUST</span>
-              </div>
-            ) : bjHandValue(myHandZones.flatMap(z => z.cards)) === 21 ? (
-              <div className="w-full py-2 rounded-xl text-center"
-                style={{ background: 'var(--accent-dim)', border: '1px solid rgba(245,158,11,0.3)' }}>
-                <span className="font-black text-sm tracking-widest" style={{ color: 'var(--accent)' }}>
-                  {myHandZones.flatMap(z => z.cards).length === 2 ? 'BLACKJACK!' : '21!'}
-                </span>
-              </div>
-            ) : isMyTurn ? (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => send({ type: 'draw_card', toZoneId: myHandZones[0]?.id ?? `hand-${myPlayerId}` })}
-                  className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-                  style={{ background: 'var(--accent)', color: '#000' }}
-                >
-                  Hit
-                </button>
-                <button
-                  onClick={() => send({ type: 'pass_turn' })}
-                  className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-                  style={{ background: 'var(--surface-hi)', color: 'var(--text)', border: '1px solid var(--border-hi)' }}
-                >
-                  Stand
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : (
+        {/* Your turn CTA — blackjack shows Hit/Stand/Split instead */}
+        {gameType === 'blackjack' ? (() => {
+          const myMainCards = gameState.zones.find(z => z.id === `hand-${myPlayerId}`)?.cards ?? []
+          const mySplitCards = gameState.zones.find(z => z.id === `hand-${myPlayerId}-b`)?.cards ?? []
+          const hasSplit = gameState.blackjackSplits?.includes(myPlayerId) ?? false
+          const isOnSplitHand = hasSplit && (gameState.blackjackMainHandDone?.includes(myPlayerId) ?? false)
+          const mainTotal = bjHandValue(myMainCards)
+          const splitTotal = bjHandValue(mySplitCards)
+          const activeTotal = isOnSplitHand ? splitTotal : mainTotal
+          const myMainBust = !hasSplit && me?.isFolded
+          const myMainDoneNoFold = hasSplit && (gameState.blackjackMainHandDone?.includes(myPlayerId) ?? false)
+          const canSplit = isMyTurn && !hasSplit && myMainCards.length === 2 && (() => {
+            const [c1, c2] = myMainCards
+            if (!c1 || !c2) return false
+            const bv = (r: string) => ['J', 'Q', 'K'].includes(r) ? 10 : r === 'A' ? 11 : Number(r)
+            return bv(c1.rank) === bv(c2.rank) && (gameState.blackjackChips?.[myPlayerId] ?? 0) > 0
+          })()
+          const totalColor = activeTotal > 21 ? '#fc8181' : activeTotal === 21 ? 'var(--accent)' : 'var(--text)'
+
+          return (
+            <div className="px-4 pt-2 pb-2 flex flex-col gap-2">
+              {/* Chip + bet info */}
+              {myPlayerId in (gameState.blackjackChips ?? {}) && (
+                <div className="flex items-center gap-3 px-1">
+                  {/* Chip stack (bank) */}
+                  <div className="flex items-center gap-2">
+                    <ChipStack count={gameState.blackjackChips[myPlayerId]} chipSize={26} />
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-xl font-black" style={{ color: 'var(--text)' }}>
+                        {gameState.blackjackChips[myPlayerId].toLocaleString()}
+                      </span>
+                      <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>chips</span>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }} />
+                  {/* Active bets */}
+                  <div className="flex items-center gap-3">
+                    {hasSplit && (
+                      <div className="flex flex-col items-center gap-0.5">
+                        <div className="flex items-center gap-1">
+                          <ChipSvg size={16} color="#d97706" />
+                          <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>
+                            {gameState.blackjackSplitBets?.[myPlayerId] ?? 0}
+                          </span>
+                        </div>
+                        <span className="text-[8px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>split</span>
+                      </div>
+                    )}
+                    <div className="flex flex-col items-center gap-0.5">
+                      <div className="flex items-center gap-1">
+                        <ChipSvg size={16} color="#d97706" />
+                        <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>
+                          {gameState.blackjackBets?.[myPlayerId] ?? 0}
+                        </span>
+                      </div>
+                      <span className="text-[8px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>bet</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Hand total display — always visible during play */}
+              {gameState.phase !== 'round-over' && !myMainBust && (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl"
+                    style={{ background: 'var(--surface-hi)', border: `1px solid ${!isOnSplitHand ? 'var(--accent)' : 'var(--border-hi)'}` }}>
+                    <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-dim)' }}>
+                      {hasSplit ? 'Hand 1' : 'Total'}
+                    </span>
+                    <span className="text-xl font-black"
+                      style={{ color: mainTotal > 21 ? '#fc8181' : mainTotal === 21 ? 'var(--accent)' : 'var(--text)' }}>
+                      {mainTotal}
+                    </span>
+                    {hasSplit && !isOnSplitHand && isMyTurn && (
+                      <span className="text-[9px] font-bold" style={{ color: 'var(--accent)' }}>▶</span>
+                    )}
+                  </div>
+                  {hasSplit && (
+                    <div className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl"
+                      style={{ background: 'var(--surface-hi)', border: `1px solid ${isOnSplitHand ? 'var(--accent)' : 'var(--border-hi)'}` }}>
+                      <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-dim)' }}>Hand 2</span>
+                      <span className="text-xl font-black"
+                        style={{ color: splitTotal > 21 ? '#fc8181' : splitTotal === 21 ? 'var(--accent)' : 'var(--text)' }}>
+                        {splitTotal}
+                      </span>
+                      {isOnSplitHand && isMyTurn && (
+                        <span className="text-[9px] font-bold" style={{ color: 'var(--accent)' }}>▶</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Status banners */}
+              {gameState.phase === 'round-over' && gameState.blackjackResults?.[myPlayerId] ? (
+                <div className="flex gap-2">
+                  <div className="flex-1 py-2 rounded-xl text-center"
+                    style={{ background: 'var(--surface-hi)', border: '1px solid var(--border-hi)' }}>
+                    {hasSplit && <div className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-dim)' }}>Hand 1</div>}
+                    <span className="font-black text-sm tracking-widest"
+                      style={{ color: BJ_RESULT_COLOR[gameState.blackjackResults[myPlayerId]] }}>
+                      {BJ_RESULT_LABEL[gameState.blackjackResults[myPlayerId]]}
+                    </span>
+                  </div>
+                  {hasSplit && gameState.blackjackSplitResults?.[myPlayerId] && (
+                    <div className="flex-1 py-2 rounded-xl text-center"
+                      style={{ background: 'var(--surface-hi)', border: '1px solid var(--border-hi)' }}>
+                      <div className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-dim)' }}>Hand 2</div>
+                      <span className="font-black text-sm tracking-widest"
+                        style={{ color: BJ_RESULT_COLOR[gameState.blackjackSplitResults[myPlayerId]] }}>
+                        {BJ_RESULT_LABEL[gameState.blackjackSplitResults[myPlayerId]]}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : myMainBust ? (
+                <div className="w-full py-2 rounded-xl text-center"
+                  style={{ background: 'rgba(229,62,62,0.12)', border: '1px solid rgba(229,62,62,0.25)' }}>
+                  <span className="font-black text-sm tracking-widest" style={{ color: '#fc8181' }}>BUST</span>
+                </div>
+              ) : activeTotal === 21 && isMyTurn ? (
+                <div className="w-full py-2 rounded-xl text-center"
+                  style={{ background: 'var(--accent-dim)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                  <span className="font-black text-sm tracking-widest" style={{ color: 'var(--accent)' }}>
+                    {!hasSplit && myMainCards.length === 2 ? 'BLACKJACK!' : '21!'}
+                  </span>
+                </div>
+              ) : isMyTurn ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => send({ type: 'draw_card', toZoneId: `hand-${myPlayerId}` })}
+                    className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+                    style={{ background: 'var(--accent)', color: '#000' }}
+                  >
+                    Hit
+                  </button>
+                  <button
+                    onClick={() => send({ type: 'pass_turn' })}
+                    className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+                    style={{ background: 'var(--surface-hi)', color: 'var(--text)', border: '1px solid var(--border-hi)' }}
+                  >
+                    Stand
+                  </button>
+                  {canSplit && (
+                    <button
+                      onClick={() => send({ type: 'blackjack_split' })}
+                      className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+                      style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border-hi)' }}
+                    >
+                      Split
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )
+        })() : (
           <>
             {isMyTurn && gameState.turnOrder.length > 0 && (
               <div className="px-4 pt-2 fade-in">
@@ -475,16 +578,20 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         />
       )}
 
-      {showCambioTutorial && (
-        <CambioTutorialModal onClose={() => setShowCambioTutorial(false)} />
+      {showTutorialFor === 'cambio' && (
+        <CambioTutorialModal onClose={() => setShowTutorialFor(null)} />
       )}
-
-      {showBluffTutorial && (
-        <BluffTutorialModal onClose={() => setShowBluffTutorial(false)} />
+      {showTutorialFor === 'bluff' && (
+        <BluffTutorialModal onClose={() => setShowTutorialFor(null)} />
       )}
-
-      {showPresidentTutorial && (
-        <PresidentTutorialModal onClose={() => setShowPresidentTutorial(false)} />
+      {showTutorialFor === 'president' && (
+        <PresidentTutorialModal onClose={() => setShowTutorialFor(null)} />
+      )}
+      {showTutorialFor === 'blackjack' && (
+        <BlackjackTutorialModal onClose={() => setShowTutorialFor(null)} />
+      )}
+      {showTutorialFor === 'poker' && (
+        <PokerTutorialModal onClose={() => setShowTutorialFor(null)} />
       )}
 
       {gameState.bluffReveal && (
@@ -664,7 +771,7 @@ function BluffRevealModal({
             <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{submitter?.name ?? 'Unknown'}</span>
             {"'s claim of "}
             <span style={{ fontWeight: 700, color: 'var(--text)' }}>
-              "{reveal.claimCount} {rankLabel(reveal.claimRank, reveal.claimCount)}"
+              "{reveal.claimCount} {rankName(reveal.claimRank, reveal.claimCount)}"
             </span>
           </p>
         </div>
@@ -709,16 +816,6 @@ function BluffRevealModal({
 
 /* ── Bluff helpers ───────────────────────────────────────────── */
 
-const RANK_NAMES_FE: Record<string, [string, string]> = {
-  'A': ['Ace', 'Aces'], 'J': ['Jack', 'Jacks'],
-  'Q': ['Queen', 'Queens'], 'K': ['King', 'Kings'], 'JKR': ['Joker', 'Jokers'],
-}
-function rankLabel(rank: string, count: number): string {
-  const pair = RANK_NAMES_FE[rank]
-  if (pair) return count !== 1 ? pair[1] : pair[0]
-  return count !== 1 ? `${rank}s` : rank
-}
-
 function BluffHistoryLog({
   last, players, activeRank,
 }: {
@@ -731,10 +828,10 @@ function BluffHistoryLog({
     <div className="fade-in px-4 py-2 rounded-2xl"
       style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
       <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
-        Last play {activeRank ? `· round rank: ${rankLabel(activeRank, 2)}` : ''} ·{' '}
+        Last play {activeRank ? `· round rank: ${rankName(activeRank, 2)}` : ''} ·{' '}
       </span>
       <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>
-        {lastName} played {last.claimCount} {rankLabel(last.claimRank, last.claimCount)}
+        {lastName} played {last.claimCount} {rankName(last.claimRank, last.claimCount)}
       </span>
     </div>
   )
@@ -803,160 +900,6 @@ function TrumpSelector({ current, onSelect }: { current: Suit | null; onSelect: 
   )
 }
 
-/* ── Blackjack section ───────────────────────────────── */
-
-function bjHandValue(cards: CardType[]): number {
-  const visible = cards.filter(c => !c.id.endsWith('__facedown') && !c.id.startsWith('hidden_'))
-  let sum = 0, aces = 0
-  for (const c of visible) {
-    if (c.rank === 'A') { aces++; sum += 11 }
-    else if (['J', 'Q', 'K'].includes(c.rank)) sum += 10
-    else sum += Number(c.rank)
-  }
-  while (sum > 21 && aces > 0) { sum -= 10; aces-- }
-  return sum
-}
-
-const BJ_RESULT_LABEL: Record<string, string> = {
-  win: 'Win',
-  blackjack: 'Blackjack!',
-  push: 'Push',
-  lose: 'Bust',
-}
-const BJ_RESULT_COLOR: Record<string, string> = {
-  win: '#4ade80',
-  blackjack: 'var(--accent)',
-  push: 'var(--text-muted)',
-  lose: '#fc8181',
-}
-
-function BlackjackSection({
-  gameState, myPlayerId, isHost, drawPileCount, send,
-}: {
-  gameState: GameState
-  myPlayerId: string
-  isHost: boolean
-  drawPileCount: number
-  send: (e: ClientEvent) => void
-}) {
-  const { currentTurnPlayerId, players, blackjackResults, blackjackChips, blackjackBets, phase } = gameState
-  const dealerZone = gameState.zones.find(z => z.id === 'dealer-hand')
-  const hiddenDealerCard = dealerZone?.cards.find(c => c.id.endsWith('__facedown'))
-  const dealerValue = bjHandValue(dealerZone?.cards ?? [])
-
-  // Other players (not me)
-  const otherPlayers = players.filter(p => p.id !== myPlayerId)
-
-  return (
-    <div className="flex flex-col gap-5 items-center w-full">
-
-      {/* Dealer hand */}
-      <div className="flex flex-col items-center gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--text-dim)' }}>
-            Dealer
-          </span>
-          {dealerZone && dealerZone.cards.length > 0 && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-              style={{ background: 'var(--surface-hi)', color: dealerValue > 21 ? '#fc8181' : dealerValue === 21 ? 'var(--accent)' : 'var(--text)', border: '1px solid var(--border-hi)' }}>
-              {hiddenDealerCard ? '?' : dealerValue}
-            </span>
-          )}
-        </div>
-        <div className="flex gap-2 justify-center flex-wrap">
-          {dealerZone?.cards.map(card => (
-            <Card key={card.id} card={card} size="md" />
-          ))}
-        </div>
-      </div>
-
-      {/* Round results when round is over */}
-      {phase === 'round-over' && blackjackResults && (
-        <div className="flex flex-col items-center gap-3 w-full max-w-xs">
-          <div className="flex flex-col gap-1.5 w-full">
-            {players.map(player => {
-              const result = blackjackResults[player.id]
-              if (!result) return null
-              const bet = blackjackBets?.[player.id] ?? 0
-              const chips = blackjackChips?.[player.id] ?? 0
-              return (
-                <div key={player.id} className="flex items-center justify-between rounded-xl px-3 py-2"
-                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                  <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{player.name}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold" style={{ color: BJ_RESULT_COLOR[result] }}>
-                      {BJ_RESULT_LABEL[result]}
-                    </span>
-                    <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{chips} chips</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          {isHost && (
-            <button
-              onClick={() => send({ type: 'next_round' })}
-              className="w-full py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
-              style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)' }}
-            >
-              Next Hand
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Other players' hands (not me) */}
-      {otherPlayers.length > 0 && phase !== 'round-over' && (
-        <div className="flex gap-5 justify-center flex-wrap">
-          {otherPlayers.map(player => {
-            const zone = gameState.zones.find(z => z.id === `hand-${player.id}`)
-            if (!zone || zone.cards.length === 0) return null
-            const val = bjHandValue(zone.cards)
-            const isActive = currentTurnPlayerId === player.id
-            const chips = blackjackChips?.[player.id] ?? 0
-            const bet = blackjackBets?.[player.id] ?? 0
-            return (
-              <div key={player.id} className="flex flex-col items-center gap-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-semibold truncate max-w-[64px]"
-                    style={{ color: isActive ? 'var(--accent)' : 'var(--text-muted)' }}>
-                    {player.name}{isActive ? ' ▶' : ''}
-                  </span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                    style={{
-                      background: 'var(--surface-hi)',
-                      color: player.isFolded ? '#fc8181' : val === 21 ? 'var(--accent)' : 'var(--text)',
-                      border: '1px solid var(--border-hi)',
-                    }}>
-                    {player.isFolded ? 'Bust' : val}
-                  </span>
-                </div>
-                <div className="text-[9px]" style={{ color: 'var(--text-dim)' }}>{chips} chips · bet {bet}</div>
-                <div className="flex gap-1.5 flex-wrap justify-center">
-                  {zone.cards.map(card => <Card key={card.id} card={card} size="sm" />)}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Shoe */}
-      {drawPileCount > 0 && (
-        <div className="flex flex-col items-center gap-1">
-          <div className="relative" style={{ width: 58, height: 86 }}>
-            <div style={{ position: 'absolute', top: -2, left: -2, width: 58, height: 86, borderRadius: 'var(--radius-card)', background: 'linear-gradient(145deg,#1a2d54,#1e3560)', border: '1px solid rgba(255,255,255,0.06)' }} />
-            <div style={{ position: 'absolute', top: -1, left: -1, width: 58, height: 86, borderRadius: 'var(--radius-card)', background: 'linear-gradient(145deg,#1e3560,#243f72)', border: '1px solid rgba(255,255,255,0.08)' }} />
-            <div style={{ position: 'absolute', top: 0, left: 0, width: 58, height: 86, borderRadius: 'var(--radius-card)', background: 'linear-gradient(145deg,#243f72,#1e3560)', border: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: 700 }}>{drawPileCount}</span>
-            </div>
-          </div>
-          <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>shoe</span>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function cambioPowerLabel(rank: string, suit: string): string | null {
   if (rank === '7' || rank === '8') return 'Peek your own card'

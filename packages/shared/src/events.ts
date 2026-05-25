@@ -36,6 +36,7 @@ export type ClientEvent =
   | { type: 'president_exchange_return'; cardIds: string[] }
   // Blackjack-specific
   | { type: 'set_blackjack_config'; startingChips: number; betAmount: number }
+  | { type: 'blackjack_split' }
   // Poker-specific
   | { type: 'set_poker_config'; startingChips: number; smallBlind: number }
   | { type: 'poker_check' }

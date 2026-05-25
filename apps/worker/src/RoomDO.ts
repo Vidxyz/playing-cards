@@ -2,6 +2,7 @@ import type {
   GameState, GamePhase, Player, Team, Zone, Card, Suit,
   ClientEvent, ServerEvent, GameAction
 } from '@playing-cards/shared'
+import { rankName } from '@playing-cards/shared'
 import { buildDeck, shuffle } from './game/deck'
 import { buildZones, dealCards } from './game/deal'
 import { getConfig } from './game/zones'
@@ -19,19 +20,6 @@ interface Session {
   playerId: string
 }
 
-const RANK_FULL: Record<string, [string, string]> = {
-  'A':   ['Ace',   'Aces'],
-  'J':   ['Jack',  'Jacks'],
-  'Q':   ['Queen', 'Queens'],
-  'K':   ['King',  'Kings'],
-  'JKR': ['Joker', 'Jokers'],
-}
-function rankName(rank: string, count: number): string {
-  const pair = RANK_FULL[rank]
-  if (pair) return count !== 1 ? pair[1] : pair[0]
-  return count !== 1 ? `${rank}s` : rank
-}
-
 function generateRoomCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase()
 }
@@ -41,6 +29,74 @@ function generateId(): string {
 }
 
 const ROOM_TTL_MS = 4 * 60 * 60 * 1000 // 4 hours
+
+function makeInitialState(roomCode: string, hostId = ''): GameState {
+  return {
+    roomCode,
+    hostId,
+    gameType: null,
+    phase: 'lobby',
+    players: [],
+    teams: [],
+    zones: [],
+    drawPileCount: 0,
+    currentTurnPlayerId: null,
+    turnOrder: [],
+    roundNumber: 0,
+    trumpSuit: null,
+    lastAction: null,
+    bluffReveal: null,
+    lastBluffBatch: null,
+    bluffActiveRank: null,
+    bluffHistory: [],
+    bluffPassCount: 0,
+    bluffPassedPlayerIds: [],
+    euchrePhase: null,
+    euchreTopCard: null,
+    euchreDealerPlayerId: null,
+    euchreMakerPlayerId: null,
+    euchreGoingAlone: false,
+    euchreBidPassCount: 0,
+    euchreCurrentTrickLedSuit: null,
+    blackjackDealerId: null,
+    blackjackStartingChips: 1000,
+    blackjackBetAmount: 100,
+    blackjackChips: {},
+    blackjackBets: {},
+    blackjackStood: [],
+    blackjackResults: null,
+    blackjackSplits: [],
+    blackjackMainHandDone: [],
+    blackjackSplitBets: {},
+    blackjackSplitResults: null,
+    cambioDrawn: null,
+    cambioPower: null,
+    cambioCaller: null,
+    cambioFinalRound: false,
+    cambioPeekSwapTarget: null,
+    cambioJokers: 2,
+    bluffJokers: 0,
+    presidentDoubleDeck: false,
+    presidentCombo: null,
+    presidentFinishOrder: [],
+    presidentPassedIds: [],
+    presidentRoles: {},
+    presidentRunPlays: [],
+    presidentDiscardPhase: null,
+    presidentExchangePhase: null,
+    pokerStartingChips: 1000,
+    pokerSmallBlind: 10,
+    pokerChips: {},
+    pokerPot: 0,
+    pokerCurrentBet: 0,
+    pokerPlayerBets: {},
+    pokerDealerPlayerId: null,
+    pokerPhase: null,
+    pokerActedThisRound: [],
+    pokerAllIn: [],
+    pokerWinners: null,
+  }
+}
 
 export class RoomDO implements DurableObject {
   private sessions: Map<string, Session> = new Map()
@@ -74,68 +130,7 @@ export class RoomDO implements DurableObject {
     if (url.pathname.endsWith('/init') && request.method === 'POST') {
       const code = url.searchParams.get('code') || generateRoomCode()
       if (!this.gameState) {
-        const gs: GameState = {
-          roomCode: code,
-          hostId: '',           // set to real playerId when first player joins via WS
-          gameType: null,
-          phase: 'lobby',
-          players: [],
-          teams: [],
-          zones: [],
-          drawPileCount: 0,
-          currentTurnPlayerId: null,
-          turnOrder: [],
-          roundNumber: 0,
-          trumpSuit: null,
-          lastAction: null,
-          bluffReveal: null,
-          lastBluffBatch: null,
-          bluffActiveRank: null,
-          bluffHistory: [],
-          bluffPassCount: 0,
-          bluffPassedPlayerIds: [],
-          euchrePhase: null,
-          euchreTopCard: null,
-          euchreDealerPlayerId: null,
-          euchreMakerPlayerId: null,
-          euchreGoingAlone: false,
-          euchreBidPassCount: 0,
-          euchreCurrentTrickLedSuit: null,
-          blackjackDealerId: null,
-          blackjackStartingChips: 1000,
-          blackjackBetAmount: 100,
-          blackjackChips: {},
-          blackjackBets: {},
-          blackjackStood: [],
-          blackjackResults: null,
-          cambioDrawn: null,
-          cambioPower: null,
-          cambioCaller: null,
-          cambioFinalRound: false,
-          cambioPeekSwapTarget: null,
-          cambioJokers: 2,
-          bluffJokers: 0,
-          presidentDoubleDeck: false,
-          presidentCombo: null,
-          presidentFinishOrder: [],
-          presidentPassedIds: [],
-          presidentRoles: {},
-          presidentRunPlays: [],
-          presidentDiscardPhase: null,
-          presidentExchangePhase: null,
-          pokerStartingChips: 1000,
-          pokerSmallBlind: 10,
-          pokerChips: {},
-          pokerPot: 0,
-          pokerCurrentBet: 0,
-          pokerPlayerBets: {},
-          pokerDealerPlayerId: null,
-          pokerPhase: null,
-          pokerActedThisRound: [],
-          pokerAllIn: [],
-          pokerWinners: null,
-        }
-        await this.saveState(gs)
+        await this.saveState(makeInitialState(code))
         await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS)
       }
       return new Response('OK', { status: 200 })
@@ -178,11 +173,46 @@ export class RoomDO implements DurableObject {
     if (!gs) return
 
     const player = gs.players.find(p => p.id === playerId)
-    if (player) {
-      player.isConnected = false
-      await this.saveState(gs)
-      await this.broadcast({ type: 'state', state: this.redactFor('') }, null)
+    if (!player) return
+
+    player.isConnected = false
+
+    if (gs.phase === 'playing' || gs.phase === 'round-over') {
+      const connectedCount = gs.players.filter(p => p.isConnected).length
+      const config = gs.gameType ? getConfig(gs.gameType) : null
+      const minRequired = config?.minPlayers ?? 2
+
+      if (connectedCount < minRequired) {
+        await this.broadcast({
+          type: 'kicked',
+          reason: `${player.name} left — not enough players to continue`,
+        }, null)
+        await this.state.storage.deleteAll()
+        return
+      }
+
+      // Enough players remain — advance turn if it was this player's turn
+      if (gs.phase === 'playing' && gs.currentTurnPlayerId === playerId) {
+        if (gs.gameType === 'blackjack') {
+          if (!gs.blackjackStood.includes(playerId)) gs.blackjackStood.push(playerId)
+          if (gs.blackjackSplits.includes(playerId) && !gs.blackjackMainHandDone.includes(playerId)) {
+            gs.blackjackMainHandDone.push(playerId)
+          }
+          if (this.allBlackjackPlayersDone(gs)) {
+            await this.saveState(gs)
+            await this.broadcastState(gs)
+            await this.handleBlackjackDealerPlay(gs)
+            return
+          }
+          this.advanceTurnBlackjack(gs)
+        } else {
+          this.advanceTurn(gs)
+        }
+      }
     }
+
+    await this.saveState(gs)
+    await this.broadcastState(gs)
   }
 
   async alarm(): Promise<void> {
@@ -365,6 +395,11 @@ export class RoomDO implements DurableObject {
         gs.bluffJokers = event.count
         break
 
+      case 'blackjack_split':
+        if (gs.gameType !== 'blackjack') return
+        await this.handleBlackjackSplit(gs, player)
+        return
+
       case 'set_blackjack_config':
         if (!player.isHost) return
         gs.blackjackStartingChips = Math.max(10, event.startingChips)
@@ -480,68 +515,7 @@ export class RoomDO implements DurableObject {
       // First player — create room
       const roomCode = await this.state.storage.get<string>('roomCode') || generateRoomCode()
       await this.state.storage.put('roomCode', roomCode)
-
-      gs = {
-        roomCode,
-        hostId: playerId,
-        gameType: null,
-        phase: 'lobby',
-        players: [],
-        teams: [],
-        zones: [],
-        drawPileCount: 0,
-        currentTurnPlayerId: null,
-        turnOrder: [],
-        roundNumber: 0,
-        trumpSuit: null,
-        lastAction: null,
-        bluffReveal: null,
-        lastBluffBatch: null,
-        bluffActiveRank: null,
-        bluffHistory: [],
-        bluffPassCount: 0,
-        bluffPassedPlayerIds: [],
-        euchrePhase: null,
-        euchreTopCard: null,
-        euchreDealerPlayerId: null,
-        euchreMakerPlayerId: null,
-        euchreGoingAlone: false,
-        euchreBidPassCount: 0,
-        euchreCurrentTrickLedSuit: null,
-        blackjackDealerId: null,
-        blackjackStartingChips: 1000,
-        blackjackBetAmount: 100,
-        blackjackChips: {},
-        blackjackBets: {},
-        blackjackStood: [],
-        blackjackResults: null,
-        cambioDrawn: null,
-        cambioPower: null,
-        cambioCaller: null,
-        cambioFinalRound: false,
-        cambioPeekSwapTarget: null,
-        cambioJokers: 2,
-        bluffJokers: 0,
-        presidentDoubleDeck: false,
-        presidentCombo: null,
-        presidentFinishOrder: [],
-        presidentPassedIds: [],
-        presidentRoles: {},
-        presidentRunPlays: [],
-        presidentDiscardPhase: null,
-        presidentExchangePhase: null,
-        pokerStartingChips: 1000,
-        pokerSmallBlind: 10,
-        pokerChips: {},
-        pokerPot: 0,
-        pokerCurrentBet: 0,
-        pokerPlayerBets: {},
-        pokerDealerPlayerId: null,
-        pokerPhase: null,
-        pokerActedThisRound: [],
-        pokerAllIn: [],
-        pokerWinners: null,
-      }
+      gs = makeInitialState(roomCode, playerId)
     }
 
     // First real player — claim host slot that /init left blank
@@ -637,6 +611,10 @@ export class RoomDO implements DurableObject {
       gs.blackjackStood = []
       gs.blackjackResults = null
       gs.blackjackBets = {}
+      gs.blackjackSplits = []
+      gs.blackjackMainHandDone = []
+      gs.blackjackSplitBets = {}
+      gs.blackjackSplitResults = null
       // Deduct bet from each player (capped at their chips)
       for (const p of gs.players) {
         const bet = Math.min(gs.blackjackBetAmount, gs.blackjackChips[p.id])
@@ -757,6 +735,14 @@ export class RoomDO implements DurableObject {
         .sort((a, b) => a.seatIndex - b.seatIndex)
 
       if (sorted.length < 2) return  // not enough players
+
+      // Bust players observe but don't receive hole cards
+      for (const p of gs.players) {
+        if ((gs.pokerChips[p.id] ?? 0) === 0) {
+          const zone = gs.zones.find(z => z.id === `hole-cards-${p.id}`)
+          if (zone) zone.cards = []
+        }
+      }
 
       // Rotate dealer
       const curDealerPos = gs.pokerDealerPlayerId
@@ -1266,14 +1252,6 @@ export class RoomDO implements DurableObject {
       team.roundScore = 0
     }
 
-    // Reset euchre bidding state (dealer is preserved for rotation in handleDeal)
-    gs.euchrePhase = null
-    gs.euchreTopCard = null
-    gs.euchreMakerPlayerId = null
-    gs.euchreGoingAlone = false
-    gs.euchreBidPassCount = 0
-    gs.euchreCurrentTrickLedSuit = null
-
     // President: return to lobby with roles preserved for card exchange
     if (gs.gameType === 'president') {
       gs.phase = 'lobby'
@@ -1318,8 +1296,14 @@ export class RoomDO implements DurableObject {
       return
     }
 
-    // Euchre: check for game over (10 pts), then redeal
+    // Euchre: reset bidding state, check for game over (10 pts), then redeal
     if (gs.gameType === 'euchre') {
+      gs.euchrePhase = null
+      gs.euchreTopCard = null
+      gs.euchreMakerPlayerId = null
+      gs.euchreGoingAlone = false
+      gs.euchreBidPassCount = 0
+      gs.euchreCurrentTrickLedSuit = null
       const winner = gs.teams.find(t => t.totalScore >= 10)
       if (winner) {
         gs.phase = 'game-over'
@@ -1327,7 +1311,6 @@ export class RoomDO implements DurableObject {
         await this.broadcastState(gs)
         return
       }
-      // Redeal (handleDeal will rotate dealer)
       await this.handleDeal(gs)
       return
     }
@@ -1905,6 +1888,27 @@ export class RoomDO implements DurableObject {
     gs.currentTurnPlayerId = gs.turnOrder[next]
   }
 
+  private isBlackjackPlayerDone(gs: GameState, pid: string): boolean {
+    const p = gs.players.find(q => q.id === pid)
+    if (gs.blackjackSplits.includes(pid)) {
+      return gs.blackjackMainHandDone.includes(pid) && gs.blackjackStood.includes(pid)
+    }
+    return (p?.isFolded ?? false) || gs.blackjackStood.includes(pid)
+  }
+
+  private advanceTurnBlackjack(gs: GameState): void {
+    if (gs.turnOrder.length === 0) return
+    let idx = gs.turnOrder.indexOf(gs.currentTurnPlayerId ?? '')
+    for (let i = 0; i < gs.turnOrder.length; i++) {
+      idx = (idx + 1) % gs.turnOrder.length
+      if (!this.isBlackjackPlayerDone(gs, gs.turnOrder[idx])) {
+        gs.currentTurnPlayerId = gs.turnOrder[idx]
+        return
+      }
+    }
+    gs.currentTurnPlayerId = null
+  }
+
   private advanceTurnSkipPassed(gs: GameState): void {
     if (gs.turnOrder.length === 0) return
     const passed = new Set(gs.bluffPassedPlayerIds)
@@ -2262,18 +2266,67 @@ export class RoomDO implements DurableObject {
 
   // ── Blackjack handlers ───────────────────────────────────────────────────
 
-  private allBlackjackPlayersDone(gs: GameState): boolean {
-    return gs.turnOrder.every(pid => {
-      const p = gs.players.find(q => q.id === pid)
-      return p?.isFolded || gs.blackjackStood.includes(pid)
-    })
+  private bjSplitValue(rank: string): number {
+    if (['J', 'Q', 'K'].includes(rank)) return 10
+    if (rank === 'A') return 11
+    return Number(rank)
   }
 
-  private async handleBlackjackStand(gs: GameState, player: Player): Promise<void> {
+  private async handleBlackjackSplit(gs: GameState, player: Player): Promise<void> {
     if (gs.currentTurnPlayerId !== player.id) return
-    if (!gs.blackjackStood.includes(player.id)) gs.blackjackStood.push(player.id)
-    this.advanceTurn(gs)
-    gs.lastAction = { type: 'pass', playerId: player.id, timestamp: Date.now() }
+    const pid = player.id
+    if (gs.blackjackSplits.includes(pid)) return       // already split
+    if (gs.blackjackMainHandDone.includes(pid)) return  // past the split window
+
+    const mainZone = gs.zones.find(z => z.id === `hand-${pid}`)
+    if (!mainZone || mainZone.cards.length !== 2) return
+
+    const [c1, c2] = mainZone.cards
+    if (this.bjSplitValue(c1.rank) !== this.bjSplitValue(c2.rank)) return
+
+    // Split bet is equal to the original bet, capped at remaining chips
+    const splitBet = Math.min(gs.blackjackBets[pid] ?? 0, gs.blackjackChips[pid] ?? 0)
+    if (splitBet <= 0) return
+
+    gs.blackjackChips[pid] = (gs.blackjackChips[pid] ?? 0) - splitBet
+    gs.blackjackSplitBets[pid] = splitBet
+
+    // Second card moves to the split zone
+    const splitCard = mainZone.cards.pop()!
+    const splitZone: Zone = {
+      id: `hand-${pid}-b`,
+      name: 'Split Hand',
+      visibility: 'face-up',
+      ownerId: pid,
+      cards: [splitCard],
+      capacity: null,
+      gridPosition: null,
+      claimLabel: null,
+      isBluffPile: false,
+    }
+    gs.zones.push(splitZone)
+
+    // Each hand gets one fresh card
+    if (this.drawPile.length > 0) {
+      mainZone.cards.push(this.drawPile.shift()!)
+      gs.drawPileCount = this.drawPile.length
+    }
+    if (this.drawPile.length > 0) {
+      splitZone.cards.push(this.drawPile.shift()!)
+      gs.drawPileCount = this.drawPile.length
+    }
+
+    gs.blackjackSplits.push(pid)
+    gs.lastAction = { type: 'deal', playerId: pid, timestamp: Date.now() }
+
+    // Auto-advance if main hand landed on 21
+    if (this.bjHandValue(mainZone.cards) === 21) {
+      gs.blackjackMainHandDone.push(pid)
+      if (this.bjHandValue(splitZone.cards) === 21) {
+        if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
+        this.advanceTurnBlackjack(gs)
+      }
+    }
 
     if (this.allBlackjackPlayersDone(gs)) {
       await this.saveState(gs)
@@ -2285,22 +2338,73 @@ export class RoomDO implements DurableObject {
     await this.broadcastState(gs)
   }
 
-  private async handleBlackjackHit(gs: GameState, player: Player, toZoneId: string): Promise<void> {
+  private allBlackjackPlayersDone(gs: GameState): boolean {
+    return gs.turnOrder.every(pid => {
+      const p = gs.players.find(q => q.id === pid)
+      if (gs.blackjackSplits.includes(pid)) {
+        return gs.blackjackMainHandDone.includes(pid) && gs.blackjackStood.includes(pid)
+      }
+      return p?.isFolded || gs.blackjackStood.includes(pid)
+    })
+  }
+
+  private async handleBlackjackStand(gs: GameState, player: Player): Promise<void> {
     if (gs.currentTurnPlayerId !== player.id) return
-    const zone = gs.zones.find(z => z.id === toZoneId)
+    const pid = player.id
+    const hasSplit = gs.blackjackSplits.includes(pid)
+    const mainDone = gs.blackjackMainHandDone.includes(pid)
+
+    if (hasSplit && !mainDone) {
+      // Standing on main hand — switch to split hand (keep same turn player)
+      gs.blackjackMainHandDone.push(pid)
+    } else {
+      // Standing on split hand, or no split — fully done
+      if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
+      this.advanceTurnBlackjack(gs)
+    }
+    gs.lastAction = { type: 'pass', playerId: pid, timestamp: Date.now() }
+
+    if (this.allBlackjackPlayersDone(gs)) {
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      await this.handleBlackjackDealerPlay(gs)
+      return
+    }
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+  }
+
+  private async handleBlackjackHit(gs: GameState, player: Player, _toZoneId: string): Promise<void> {
+    if (gs.currentTurnPlayerId !== player.id) return
+    const pid = player.id
+    const hasSplit = gs.blackjackSplits.includes(pid)
+    const mainDone = gs.blackjackMainHandDone.includes(pid)
+
+    // Always derive the active zone from split state (ignore client-supplied toZoneId)
+    const activeZoneId = (hasSplit && mainDone) ? `hand-${pid}-b` : `hand-${pid}`
+    const zone = gs.zones.find(z => z.id === activeZoneId)
     if (!zone || this.drawPile.length === 0) return
 
     const card = this.drawPile.shift()!
     zone.cards.push(card)
     gs.drawPileCount = this.drawPile.length
-    gs.lastAction = { type: 'draw', playerId: player.id, toZoneId, timestamp: Date.now() }
+    gs.lastAction = { type: 'draw', playerId: pid, toZoneId: activeZoneId, timestamp: Date.now() }
 
     const value = this.bjHandValue(zone.cards)
     if (value > 21) {
-      // Bust
-      player.isFolded = true
-      if (!gs.blackjackStood.includes(player.id)) gs.blackjackStood.push(player.id)
-      this.advanceTurn(gs)
+      if (hasSplit && !mainDone) {
+        // Main hand bust — advance to split hand without moving to next player
+        gs.blackjackMainHandDone.push(pid)
+      } else if (hasSplit && mainDone) {
+        // Split hand bust — fully done
+        if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
+        this.advanceTurnBlackjack(gs)
+      } else {
+        // Regular bust
+        player.isFolded = true
+        if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
+        this.advanceTurnBlackjack(gs)
+      }
     }
 
     if (this.allBlackjackPlayersDone(gs)) {
@@ -2342,35 +2446,48 @@ export class RoomDO implements DurableObject {
     const dealerBust = dealerValue > 21
     const dealerBJ = dealerZone.cards.length === 2 && dealerValue === 21
 
-    // Settle each player
+    const settle = (val: number, isNatural: boolean, bet: number, pid: string): 'win' | 'blackjack' | 'push' | 'lose' => {
+      if (val > 21) return 'lose'
+      if (isNatural && dealerBJ) {
+        gs.blackjackChips[pid] = (gs.blackjackChips[pid] ?? 0) + bet
+        return 'push'
+      }
+      if (isNatural) {
+        gs.blackjackChips[pid] = (gs.blackjackChips[pid] ?? 0) + Math.floor(bet * 2.5)
+        return 'blackjack'
+      }
+      if (dealerBust || val > dealerValue) {
+        gs.blackjackChips[pid] = (gs.blackjackChips[pid] ?? 0) + bet * 2
+        return 'win'
+      }
+      if (val === dealerValue) {
+        gs.blackjackChips[pid] = (gs.blackjackChips[pid] ?? 0) + bet
+        return 'push'
+      }
+      return 'lose'
+    }
+
     const results: Record<string, 'win' | 'blackjack' | 'push' | 'lose'> = {}
+    const splitResults: Record<string, 'win' | 'blackjack' | 'push' | 'lose'> = {}
     for (const pid of gs.turnOrder) {
       const bet = gs.blackjackBets[pid] ?? 0
-      const zone = gs.zones.find(z => z.id === `hand-${pid}`)
-      const val = this.bjHandValue(zone?.cards ?? [])
-      const playerBJ = (zone?.cards.length ?? 0) === 2 && val === 21
+      const hasSplit = gs.blackjackSplits.includes(pid)
+      const mainZone = gs.zones.find(z => z.id === `hand-${pid}`)
+      const mainVal = this.bjHandValue(mainZone?.cards ?? [])
+      // Natural blackjack only counts on an unsplit hand of exactly 2 cards
+      const mainBJ = !hasSplit && (mainZone?.cards.length ?? 0) === 2 && mainVal === 21
+      results[pid] = settle(mainVal, mainBJ, bet, pid)
 
-      if (val > 21) {
-        // Busted
-        results[pid] = 'lose'
-      } else if (playerBJ && dealerBJ) {
-        results[pid] = 'push'
-        gs.blackjackChips[pid] = (gs.blackjackChips[pid] ?? 0) + bet
-      } else if (playerBJ) {
-        results[pid] = 'blackjack'
-        gs.blackjackChips[pid] = (gs.blackjackChips[pid] ?? 0) + Math.floor(bet * 2.5)
-      } else if (dealerBust || val > dealerValue) {
-        results[pid] = 'win'
-        gs.blackjackChips[pid] = (gs.blackjackChips[pid] ?? 0) + bet * 2
-      } else if (val === dealerValue) {
-        results[pid] = 'push'
-        gs.blackjackChips[pid] = (gs.blackjackChips[pid] ?? 0) + bet
-      } else {
-        results[pid] = 'lose'
+      if (hasSplit) {
+        const splitBet = gs.blackjackSplitBets[pid] ?? 0
+        const splitZone = gs.zones.find(z => z.id === `hand-${pid}-b`)
+        const splitVal = this.bjHandValue(splitZone?.cards ?? [])
+        splitResults[pid] = settle(splitVal, false, splitBet, pid)
       }
     }
 
     gs.blackjackResults = results
+    gs.blackjackSplitResults = gs.blackjackSplits.length > 0 ? splitResults : null
     gs.phase = 'round-over'
     await this.saveState(gs)
     await this.broadcastState(gs)

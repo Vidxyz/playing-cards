@@ -56,6 +56,11 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
         }, duration)
       }
     } else if (event.type === 'kicked') {
+      // Persist informational reasons (disconnect, expiry) so home page can show them.
+      // 'Game ended by host' is intentional — no notification needed.
+      if (event.reason && event.reason !== 'Game ended by host') {
+        try { sessionStorage.setItem('kicked_reason', event.reason) } catch {}
+      }
       window.location.href = '/'
     }
   }, [])

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useTheme } from '@/hooks/useTheme'
 import { useAccent, ACCENT_OPTIONS, type AccentKey } from '@/hooks/useAccent'
 
@@ -113,6 +114,29 @@ export function ThemeToggle({ compact: _compact }: { compact?: boolean }) {
               })}
             </div>
           </section>
+
+          {/* About */}
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+            <Link
+              href="/about"
+              onClick={() => setOpen(false)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '7px 10px',
+                borderRadius: 10,
+                background: 'var(--surface-mid)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-muted)',
+                fontSize: 13, fontWeight: 600,
+                textDecoration: 'none',
+              }}
+            >
+              <span>ℹ️  About</span>
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" style={{ opacity: 0.4, flexShrink: 0 }} aria-hidden="true">
+                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+              </svg>
+            </Link>
+          </div>
         </div>
       )}
     </div>

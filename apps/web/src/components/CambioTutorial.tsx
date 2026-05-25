@@ -332,6 +332,155 @@ export function PresidentTutorialModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+export function BlackjackTutorialModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-3xl overflow-y-auto card-slide"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxHeight: '88vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 sticky top-0"
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>How to Play Blackjack</h2>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Beat the dealer without going over 21</p>
+          </div>
+          <button onClick={onClose} className="text-sm px-3 py-1 rounded-full"
+            style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 pb-8 pt-4 flex flex-col gap-5">
+
+          <TutSection icon="🎯" title="Goal">
+            <p>Get a hand value closer to <strong>21</strong> than the dealer's — without going over. Each player plays against the dealer independently.</p>
+          </TutSection>
+
+          <TutSection icon="🃏" title="Card Values">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="2 – 10" desc="Worth their face value." />
+              <Row label="J, Q, K" desc="Worth 10 points each." />
+              <Row label="Ace" desc="Worth 11 — automatically counts as 1 if 11 would bust you." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="🂡" title="The Deal">
+            <p>Each player receives <strong>2 face-up cards</strong>. The dealer gets 1 face-up and 1 face-down (the hole card).</p>
+            <p className="mt-1.5">If you are dealt exactly 21 on your first two cards, that is a <strong>Blackjack</strong> — you automatically stand and collect a 2.5× payout.</p>
+          </TutSection>
+
+          <TutSection icon="👆" title="Your Turn — Hit or Stand">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Hit" desc="Draw another card. You can hit as many times as you like." />
+              <Row label="Stand" desc="Keep your current hand and end your turn." />
+              <Row label="Bust" desc="If your total exceeds 21 you bust and lose your bet immediately." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="🤖" title="The Dealer's Turn">
+            <p>After all players have stood or busted, the dealer reveals their hole card. The dealer <strong>must hit until reaching 17 or higher</strong>, then must stand.</p>
+            <p className="mt-1.5">If the dealer busts, all players still in the hand win.</p>
+          </TutSection>
+
+          <TutSection icon="💰" title="Payouts">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Blackjack (21 on first 2 cards)" desc="Win 2.5× your bet." />
+              <Row label="Beat the dealer" desc="Win 2× your bet." />
+              <Row label="Push (tie)" desc="Your bet is returned." />
+              <Row label="Lose or bust" desc="Your bet is lost." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="🪙" title="Chips">
+            <p>Each player starts with a set number of chips. A fixed bet is deducted at the start of every hand — if you don't have enough, your bet is capped at your remaining chips.</p>
+            <p className="mt-1.5">The game ends when all players are out of chips.</p>
+          </TutSection>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function PokerTutorialModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-3xl overflow-y-auto card-slide"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxHeight: '88vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 sticky top-0"
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>How to Play Poker</h2>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Texas Hold'em — best 5-card hand wins</p>
+          </div>
+          <button onClick={onClose} className="text-sm px-3 py-1 rounded-full"
+            style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 pb-8 pt-4 flex flex-col gap-5">
+
+          <TutSection icon="🎯" title="Goal">
+            <p>Win chips by having the best 5-card hand at showdown, or by making everyone else fold before that.</p>
+          </TutSection>
+
+          <TutSection icon="🃏" title="The Deal">
+            <p>Each player receives <strong>2 private hole cards</strong>. Five <strong>community cards</strong> are revealed in stages and shared by all players.</p>
+            <p className="mt-1.5">Your best hand is any combination of your 2 hole cards and the 5 community cards.</p>
+          </TutSection>
+
+          <TutSection icon="🔄" title="Betting Rounds">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Pre-flop" desc="Hole cards dealt. Small blind and big blind post mandatory bets. Action starts left of the big blind." />
+              <Row label="Flop" desc="3 community cards revealed. Betting starts left of the dealer." />
+              <Row label="Turn" desc="4th community card revealed. Another betting round." />
+              <Row label="River" desc="5th and final community card. Last betting round." />
+              <Row label="Showdown" desc="Remaining players reveal their hands. Best hand wins the pot." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="👆" title="Betting Actions">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Check" desc="Pass the action — only available if no bet has been made this round." />
+              <Row label="Call" desc="Match the current bet to stay in the hand." />
+              <Row label="Bet / Raise" desc="Put in chips. Others must call, raise, or fold." />
+              <Row label="Fold" desc="Discard your hand and forfeit your chips for this round." />
+              <Row label="All-in" desc="Bet all your remaining chips. You can still win up to the amount you put in from each player." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="🏆" title="Hand Rankings (high → low)">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Royal Flush" desc="A K Q J 10 of the same suit." />
+              <Row label="Straight Flush" desc="Five consecutive cards of the same suit." />
+              <Row label="Four of a Kind" desc="Four cards of the same rank." />
+              <Row label="Full House" desc="Three of a kind + a pair." />
+              <Row label="Flush" desc="Five cards of the same suit (not consecutive)." />
+              <Row label="Straight" desc="Five consecutive ranks (any suit). Ace can be high or low." />
+              <Row label="Three of a Kind" desc="Three cards of the same rank." />
+              <Row label="Two Pair" desc="Two different pairs." />
+              <Row label="Pair" desc="Two cards of the same rank." />
+              <Row label="High Card" desc="None of the above — highest card plays." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="🪙" title="Blinds & Chips">
+            <p>The <strong>small blind</strong> and <strong>big blind</strong> (2× small blind) are forced bets posted before cards are dealt. The dealer button rotates each hand so blinds move around the table.</p>
+            <p className="mt-1.5">A player with no chips left is eliminated. Last player with chips wins.</p>
+          </TutSection>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TutSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (
     <div>
