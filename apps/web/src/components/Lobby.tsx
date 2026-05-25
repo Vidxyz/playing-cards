@@ -9,8 +9,8 @@ const GAMES: {
 }[] = [
   { type: 'president', label: 'President',  icon: '👑', desc: 'Get rid of all cards first',       min: 2, max: 8 },
   { type: 'bluff',     label: 'Bluff',      icon: '🎭', desc: 'Lie freely, get caught, take pile', min: 3, max: 8 },
-  { type: 'poker',     label: 'Poker',      icon: '♠',  desc: "Texas Hold'em",                    min: 2, max: 9, comingSoon: true },
-  { type: 'blackjack', label: 'Blackjack',  icon: '21', desc: 'Beat the dealer to 21',             min: 2, max: 7, comingSoon: true },
+  { type: 'poker',     label: 'Poker',      icon: '♠',  desc: "Texas Hold'em",                    min: 2, max: 9 },
+  { type: 'blackjack', label: 'Blackjack',  icon: '21', desc: 'Beat the dealer to 21',             min: 2, max: 7 },
   { type: 'euchre',    label: 'Euchre',     icon: '🤝', desc: '2v2 trick-taking',                  min: 4, max: 4 },
   { type: 'cambio',    label: 'Cambio',     icon: '🔄', desc: 'Lowest total wins — swap & peek',   min: 2, max: 6 },
 ]
@@ -225,6 +225,57 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
         </Section>
       )}
 
+      {/* Poker config */}
+      {isHost && selectedGame === 'poker' && (
+        <>
+          <Section label="Starting Chips">
+            <div className="flex gap-2">
+              {[500, 1000, 2000, 5000].map(chips => {
+                const active = gameState.pokerStartingChips === chips
+                return (
+                  <button
+                    key={chips}
+                    onClick={() => send({ type: 'set_poker_config', startingChips: chips, smallBlind: gameState.pokerSmallBlind })}
+                    className="flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+                    style={{
+                      background: active ? 'var(--accent-dim)' : 'var(--surface)',
+                      color: active ? 'var(--accent)' : 'var(--text-muted)',
+                      border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                    }}
+                  >
+                    {chips}
+                  </button>
+                )
+              })}
+            </div>
+          </Section>
+          <Section label="Small Blind">
+            <div className="flex gap-2">
+              {[5, 10, 25, 50].map(blind => {
+                const active = gameState.pokerSmallBlind === blind
+                return (
+                  <button
+                    key={blind}
+                    onClick={() => send({ type: 'set_poker_config', startingChips: gameState.pokerStartingChips, smallBlind: blind })}
+                    className="flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+                    style={{
+                      background: active ? 'var(--accent-dim)' : 'var(--surface)',
+                      color: active ? 'var(--accent)' : 'var(--text-muted)',
+                      border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                    }}
+                  >
+                    {blind}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-dim)' }}>
+              Big blind: {gameState.pokerSmallBlind * 2}
+            </p>
+          </Section>
+        </>
+      )}
+
       {/* Cambio joker count */}
       {isHost && selectedGame === 'cambio' && (
         <Section label="Jokers in Deck">
@@ -253,49 +304,55 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
         </Section>
       )}
 
-      {/* Blackjack dealer assignment */}
-      {selectedGame === 'blackjack' && (
-        <Section label="Dealer">
-          <div className="flex flex-col gap-1.5">
-            {gameState.players.map(player => {
-              const isDealer = gameState.blackjackDealerId === player.id
-              return (
-                <div key={player.id}
-                  className="flex items-center justify-between rounded-xl px-3 py-2.5"
-                  style={{
-                    background: isDealer ? 'var(--accent-dim)' : 'var(--surface)',
-                    border: '1px solid ' + (isDealer ? 'rgba(245,158,11,0.4)' : 'var(--border)'),
-                  }}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium" style={{ color: isDealer ? 'var(--accent)' : 'var(--text)' }}>
-                      {player.name}
-                    </span>
-                    {isDealer && (
-                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-                        style={{ background: 'rgba(245,158,11,0.2)', color: 'var(--accent)' }}>
-                        Dealer
-                      </span>
-                    )}
-                  </div>
-                  {isHost && !isDealer && (
-                    <button
-                      onClick={() => send({ type: 'set_dealer', playerId: player.id })}
-                      className="text-xs font-semibold px-3 py-1 rounded-full transition-all active:scale-95"
-                      style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-                    >
-                      Set dealer
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-            {!gameState.blackjackDealerId && (
-              <p className="text-[11px] text-center mt-1" style={{ color: 'var(--text-dim)' }}>
-                {isHost ? 'Tap "Set dealer" to assign the dealer role' : 'Host will assign the dealer'}
-              </p>
-            )}
-          </div>
-        </Section>
+      {/* Blackjack chip config */}
+      {isHost && selectedGame === 'blackjack' && (
+        <>
+          <Section label="Starting Chips">
+            <div className="flex gap-2">
+              {[500, 1000, 2000, 5000].map(chips => {
+                const active = gameState.blackjackStartingChips === chips
+                return (
+                  <button
+                    key={chips}
+                    onClick={() => send({ type: 'set_blackjack_config', startingChips: chips, betAmount: gameState.blackjackBetAmount })}
+                    className="flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+                    style={{
+                      background: active ? 'var(--accent-dim)' : 'var(--surface)',
+                      color: active ? 'var(--accent)' : 'var(--text-muted)',
+                      border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                    }}
+                  >
+                    {chips}
+                  </button>
+                )
+              })}
+            </div>
+          </Section>
+          <Section label="Bet Per Hand">
+            <div className="flex gap-2">
+              {[25, 50, 100, 200].map(bet => {
+                const active = gameState.blackjackBetAmount === bet
+                return (
+                  <button
+                    key={bet}
+                    onClick={() => send({ type: 'set_blackjack_config', startingChips: gameState.blackjackStartingChips, betAmount: bet })}
+                    className="flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+                    style={{
+                      background: active ? 'var(--accent-dim)' : 'var(--surface)',
+                      color: active ? 'var(--accent)' : 'var(--text-muted)',
+                      border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                    }}
+                  >
+                    {bet}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-dim)' }}>
+              Blackjack pays 2.5×
+            </p>
+          </Section>
+        </>
       )}
 
       {/* Euchre seat assignment */}

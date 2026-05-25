@@ -11,6 +11,7 @@ import { Card } from './Card'
 import { CambioTutorialModal, BluffTutorialModal, PresidentTutorialModal } from './CambioTutorial'
 import { EuchreBoard } from './EuchreBoard'
 import { PresidentBoard } from './PresidentBoard'
+import { PokerBoard } from './PokerBoard'
 import { ThemeToggle } from './ThemeToggle'
 import { Toast } from './Toast'
 
@@ -43,6 +44,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   useEffect(() => {
     if (gameState.phase !== 'round-over') return
     if (gameState.gameType === 'president') return  // PresidentBoard shows its own results
+    if (gameState.gameType === 'poker') return  // PokerBoard shows its own results
+    if (gameState.gameType === 'blackjack') return  // BlackjackSection shows its own results
     // For Cambio: delay ScoreBoard so the card-flip reveal animation plays first
     const delay = gameState.gameType === 'cambio' ? 3000 : 0
     const t = setTimeout(() => setShowScores(true), delay)
@@ -216,7 +219,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             <span className="text-xs font-semibold self-center mr-1" style={{ color: 'var(--text-muted)' }}>
               R{gameState.roundNumber}
             </span>
-            {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && gameType !== 'president' && (
+            {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && gameType !== 'president' && gameType !== 'poker' && (
               <TopBtn
                 onClick={() => !myHasPassed && send({ type: 'pass_turn' })}
                 disabled={myHasPassed}
@@ -234,7 +237,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
               <TopBtn onClick={() => setShowPresidentTutorial(true)}>?</TopBtn>
             )}
             <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
-            {isHost && gameType !== 'president' && (
+            {isHost && gameType !== 'president' && gameType !== 'poker' && gameType !== 'blackjack' && (
               <TopBtn onClick={() => send({ type: 'next_round' })} accent>
                 Next Round
               </TopBtn>
@@ -248,8 +251,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       {/* ── Table (shared zones + draw pile) ─────────── */}
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-3 overflow-y-auto">
 
-        {/* Turn indicator — hidden for president (board shows player statuses directly) */}
-        {gameState.turnOrder.length > 0 && gameState.currentTurnPlayerId && gameType !== 'president' && (
+        {/* Turn indicator — hidden for president/poker (they have their own displays) */}
+        {gameState.turnOrder.length > 0 && gameState.currentTurnPlayerId && gameType !== 'president' && gameType !== 'poker' && (
           <TurnBanner gameState={gameState} myPlayerId={myPlayerId} />
         )}
 
@@ -261,6 +264,16 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             send={send}
             onHome={onLeave}
           />
+        ) : gameType === 'poker' ? (
+          <div className="self-stretch flex-1 flex w-full">
+            <PokerBoard
+              gameState={gameState}
+              myPlayerId={myPlayerId}
+              send={send}
+              onLeave={onLeave}
+              isHost={isHost}
+            />
+          </div>
         ) : gameType === 'euchre' ? (
           <EuchreBoard
             gameState={gameState}
@@ -353,13 +366,28 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         )}
       </div>
 
-      {/* ── My hand (hidden for Cambio; dealer has no player hand in Blackjack) ── */}
-      {gameType !== 'cambio' && gameType !== 'euchre' && !(gameType === 'blackjack' && myPlayerId === gameState.blackjackDealerId) && (
+      {/* ── My hand (hidden for Cambio/Euchre/Poker) ── */}
+      {gameType !== 'cambio' && gameType !== 'euchre' && gameType !== 'poker' && (
       <div className="flex-shrink-0 pb-safe" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
         {/* Your turn CTA — blackjack shows Hit/Stand instead */}
         {gameType === 'blackjack' ? (
           <div className="px-4 pt-2 pb-2 flex flex-col gap-2">
-            {me?.isFolded ? (
+            {/* Chip info */}
+            {gameState.blackjackChips && myPlayerId in gameState.blackjackChips && (
+              <div className="flex justify-between text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                <span>{gameState.blackjackChips[myPlayerId]} chips</span>
+                <span>Bet: {gameState.blackjackBets?.[myPlayerId] ?? 0}</span>
+              </div>
+            )}
+            {gameState.phase === 'round-over' && gameState.blackjackResults?.[myPlayerId] ? (
+              <div className="w-full py-2 rounded-xl text-center"
+                style={{ background: 'var(--surface-hi)', border: '1px solid var(--border-hi)' }}>
+                <span className="font-black text-sm tracking-widest"
+                  style={{ color: BJ_RESULT_COLOR[gameState.blackjackResults[myPlayerId]] }}>
+                  {BJ_RESULT_LABEL[gameState.blackjackResults[myPlayerId]]}
+                </span>
+              </div>
+            ) : me?.isFolded ? (
               <div className="w-full py-2 rounded-xl text-center"
                 style={{ background: 'rgba(229,62,62,0.12)', border: '1px solid rgba(229,62,62,0.25)' }}>
                 <span className="font-black text-sm tracking-widest" style={{ color: '#fc8181' }}>BUST</span>
@@ -426,9 +454,6 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
 
         {/* Extra actions */}
         <div className="flex gap-2 justify-center px-4 pt-1 pb-2">
-          {gameType === 'poker' && !me?.isFolded && (
-            <ActionPill onClick={() => send({ type: 'fold' })} danger>Fold</ActionPill>
-          )}
           {gameType === 'president' && isInDiscardPhase && (
             <ActionPill onClick={() => handleRunDiscard([])}>Skip</ActionPill>
           )}
@@ -792,6 +817,19 @@ function bjHandValue(cards: CardType[]): number {
   return sum
 }
 
+const BJ_RESULT_LABEL: Record<string, string> = {
+  win: 'Win',
+  blackjack: 'Blackjack!',
+  push: 'Push',
+  lose: 'Bust',
+}
+const BJ_RESULT_COLOR: Record<string, string> = {
+  win: '#4ade80',
+  blackjack: 'var(--accent)',
+  push: 'var(--text-muted)',
+  lose: '#fc8181',
+}
+
 function BlackjackSection({
   gameState, myPlayerId, isHost, drawPileCount, send,
 }: {
@@ -801,16 +839,13 @@ function BlackjackSection({
   drawPileCount: number
   send: (e: ClientEvent) => void
 }) {
-  const { blackjackDealerId, currentTurnPlayerId, players } = gameState
+  const { currentTurnPlayerId, players, blackjackResults, blackjackChips, blackjackBets, phase } = gameState
   const dealerZone = gameState.zones.find(z => z.id === 'dealer-hand')
   const hiddenDealerCard = dealerZone?.cards.find(c => c.id.endsWith('__facedown'))
   const dealerValue = bjHandValue(dealerZone?.cards ?? [])
-  const dealerPlayer = players.find(p => p.id === blackjackDealerId)
-  const isDealerTurn = currentTurnPlayerId === blackjackDealerId
-  const amIDealer = myPlayerId === blackjackDealerId
 
-  // Players shown in table area = everyone except me (dealer is special — no player hand)
-  const otherPlayers = players.filter(p => p.id !== myPlayerId && p.id !== blackjackDealerId)
+  // Other players (not me)
+  const otherPlayers = players.filter(p => p.id !== myPlayerId)
 
   return (
     <div className="flex flex-col gap-5 items-center w-full">
@@ -818,10 +853,8 @@ function BlackjackSection({
       {/* Dealer hand */}
       <div className="flex flex-col items-center gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-widest font-semibold"
-            style={{ color: isDealerTurn ? 'var(--accent)' : 'var(--text-dim)' }}>
-            {dealerPlayer ? `${dealerPlayer.name} (Dealer)` : 'Dealer'}
-            {isDealerTurn ? ' ▶' : ''}
+          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--text-dim)' }}>
+            Dealer
           </span>
           {dealerZone && dealerZone.cards.length > 0 && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
@@ -832,72 +865,56 @@ function BlackjackSection({
         </div>
         <div className="flex gap-2 justify-center flex-wrap">
           {dealerZone?.cards.map(card => (
-            <Card
-              key={card.id}
-              card={card}
-              size="md"
-              onClick={amIDealer && isDealerTurn && card.id.endsWith('__facedown')
-                ? () => send({ type: 'flip_card', cardId: card.id, zoneId: 'dealer-hand' })
-                : undefined}
-            />
+            <Card key={card.id} card={card} size="md" />
           ))}
         </div>
-        {/* Dealer controls: only visible to dealer player on their turn */}
-        {amIDealer && isDealerTurn && (
-          <div className="flex gap-2">
-            {hiddenDealerCard && (
-              <button
-                onClick={() => send({ type: 'flip_card', cardId: hiddenDealerCard.id, zoneId: 'dealer-hand' })}
-                className="text-[10px] font-bold px-3 py-1.5 rounded-full transition-all active:scale-95"
-                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}
-              >
-                Reveal
-              </button>
-            )}
-            {!hiddenDealerCard && dealerValue < 17 && (
-              <button
-                onClick={() => send({ type: 'draw_card', toZoneId: 'dealer-hand' })}
-                className="text-[10px] font-bold px-3 py-1.5 rounded-full transition-all active:scale-95"
-                style={{ background: 'var(--surface-hi)', color: 'var(--text)', border: '1px solid var(--border-hi)' }}
-              >
-                Hit ({dealerValue})
-              </button>
-            )}
-            {!hiddenDealerCard && dealerValue >= 17 && (
-              <button
-                onClick={() => send({ type: 'pass_turn' })}
-                className="text-[10px] font-bold px-3 py-1.5 rounded-full transition-all active:scale-95"
-                style={{ background: 'var(--surface-hi)', color: 'var(--text)', border: '1px solid var(--border-hi)' }}
-              >
-                Stand ({dealerValue})
-              </button>
-            )}
-          </div>
-        )}
-        {/* Host can also see dealer controls for oversight */}
-        {isHost && !amIDealer && isDealerTurn && (
-          <div className="flex gap-2">
-            {hiddenDealerCard && (
-              <button
-                onClick={() => send({ type: 'flip_card', cardId: hiddenDealerCard.id, zoneId: 'dealer-hand' })}
-                className="text-[10px] font-bold px-3 py-1.5 rounded-full transition-all active:scale-95"
-                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}
-              >
-                Reveal dealer
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Other players' hands (not me, not dealer) */}
-      {otherPlayers.length > 0 && (
+      {/* Round results when round is over */}
+      {phase === 'round-over' && blackjackResults && (
+        <div className="flex flex-col items-center gap-3 w-full max-w-xs">
+          <div className="flex flex-col gap-1.5 w-full">
+            {players.map(player => {
+              const result = blackjackResults[player.id]
+              if (!result) return null
+              const bet = blackjackBets?.[player.id] ?? 0
+              const chips = blackjackChips?.[player.id] ?? 0
+              return (
+                <div key={player.id} className="flex items-center justify-between rounded-xl px-3 py-2"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{player.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold" style={{ color: BJ_RESULT_COLOR[result] }}>
+                      {BJ_RESULT_LABEL[result]}
+                    </span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{chips} chips</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {isHost && (
+            <button
+              onClick={() => send({ type: 'next_round' })}
+              className="w-full py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+              style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)' }}
+            >
+              Next Hand
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Other players' hands (not me) */}
+      {otherPlayers.length > 0 && phase !== 'round-over' && (
         <div className="flex gap-5 justify-center flex-wrap">
           {otherPlayers.map(player => {
             const zone = gameState.zones.find(z => z.id === `hand-${player.id}`)
             if (!zone || zone.cards.length === 0) return null
             const val = bjHandValue(zone.cards)
             const isActive = currentTurnPlayerId === player.id
+            const chips = blackjackChips?.[player.id] ?? 0
+            const bet = blackjackBets?.[player.id] ?? 0
             return (
               <div key={player.id} className="flex flex-col items-center gap-1">
                 <div className="flex items-center gap-1.5">
@@ -914,6 +931,7 @@ function BlackjackSection({
                     {player.isFolded ? 'Bust' : val}
                   </span>
                 </div>
+                <div className="text-[9px]" style={{ color: 'var(--text-dim)' }}>{chips} chips · bet {bet}</div>
                 <div className="flex gap-1.5 flex-wrap justify-center">
                   {zone.cards.map(card => <Card key={card.id} card={card} size="sm" />)}
                 </div>

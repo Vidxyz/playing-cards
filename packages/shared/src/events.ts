@@ -34,6 +34,14 @@ export type ClientEvent =
   // President-specific
   | { type: 'president_run_discard'; cardIds: string[] }
   | { type: 'president_exchange_return'; cardIds: string[] }
+  // Blackjack-specific
+  | { type: 'set_blackjack_config'; startingChips: number; betAmount: number }
+  // Poker-specific
+  | { type: 'set_poker_config'; startingChips: number; smallBlind: number }
+  | { type: 'poker_check' }
+  | { type: 'poker_call' }
+  | { type: 'poker_bet'; amount: number }
+  | { type: 'poker_all_in' }
   // Euchre-specific
   | { type: 'euchre_order_up'; goAlone?: boolean }
   | { type: 'euchre_pass' }

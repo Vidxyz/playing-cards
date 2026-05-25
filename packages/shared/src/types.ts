@@ -91,6 +91,12 @@ export interface GameState {
   euchreCurrentTrickLedSuit: Suit | null
   // Blackjack-specific
   blackjackDealerId: string | null
+  blackjackStartingChips: number
+  blackjackBetAmount: number
+  blackjackChips: Record<string, number>
+  blackjackBets: Record<string, number>
+  blackjackStood: string[]
+  blackjackResults: Record<string, 'win' | 'blackjack' | 'push' | 'lose'> | null
   // Cambio-specific
   cambioDrawn: { card: Card; fromDiscard: boolean } | null
   cambioPower: 'peek-own' | 'peek-opponent' | 'blind-swap' | 'peek-swap' | 'peek-swap-ready' | null
@@ -116,6 +122,18 @@ export interface GameState {
     receivedCardIds: string[]  // cards they received (for animation)
     giverRole: string      // 'bum' | 'vb' — label for display
   }[] | null
+  // Poker-specific
+  pokerStartingChips: number
+  pokerSmallBlind: number
+  pokerChips: Record<string, number>
+  pokerPot: number
+  pokerCurrentBet: number
+  pokerPlayerBets: Record<string, number>
+  pokerDealerPlayerId: string | null
+  pokerPhase: 'pre-flop' | 'flop' | 'turn' | 'river' | 'showdown' | null
+  pokerActedThisRound: string[]
+  pokerAllIn: string[]
+  pokerWinners: { playerId: string; amount: number; handName: string }[] | null
 }
 
 export interface GameAction {
