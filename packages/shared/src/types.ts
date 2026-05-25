@@ -81,6 +81,14 @@ export interface GameState {
   bluffHistory: Array<{ submitterId: string; claimRank: string; claimCount: number }>
   bluffPassCount: number
   bluffPassedPlayerIds: string[]
+  // Euchre-specific
+  euchrePhase: 'bidding1' | 'bidding2' | 'discard' | 'playing' | null
+  euchreTopCard: Card | null
+  euchreDealerPlayerId: string | null
+  euchreMakerPlayerId: string | null
+  euchreGoingAlone: boolean
+  euchreBidPassCount: number
+  euchreCurrentTrickLedSuit: Suit | null
   // Blackjack-specific
   blackjackDealerId: string | null
   // Cambio-specific

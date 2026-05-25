@@ -67,8 +67,8 @@ export const GAME_CONFIGS: Record<string, GameConfig> = {
     hasTurnOrder: true,
     zoneTemplates: [
       { id: 'hand', name: 'Hand', visibility: 'owner-only', perPlayer: true, capacity: null },
-      { id: 'kitty', name: 'Kitty', visibility: 'face-down', perPlayer: false, capacity: 4 },
-      { id: 'trick', name: 'Current Trick', visibility: 'face-up', perPlayer: false, capacity: null },
+      { id: 'kitty', name: 'Kitty', visibility: 'face-down', perPlayer: false, capacity: 5 },
+      { id: 'trick', name: 'Trick', visibility: 'face-up', perPlayer: true, capacity: 1 },
       { id: 'tricks-a', name: 'Team A Tricks', visibility: 'face-down', perPlayer: false, capacity: null },
       { id: 'tricks-b', name: 'Team B Tricks', visibility: 'face-down', perPlayer: false, capacity: null },
     ],

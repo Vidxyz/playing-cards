@@ -31,6 +31,11 @@ export type ClientEvent =
   | { type: 'cambio_stick'; zoneId: string }
   | { type: 'set_cambio_jokers'; count: number }
   | { type: 'set_bluff_jokers'; count: number }
+  // Euchre-specific
+  | { type: 'euchre_order_up'; goAlone?: boolean }
+  | { type: 'euchre_pass' }
+  | { type: 'euchre_call_suit'; suit: Suit; goAlone?: boolean }
+  | { type: 'euchre_discard'; cardId: string }
 
 // Server → Client
 export type ServerEvent =

@@ -9,6 +9,7 @@ import { PlayerStrip } from './PlayerStrip'
 import { ScoreBoard } from './ScoreBoard'
 import { Card } from './Card'
 import { CambioTutorialModal, BluffTutorialModal } from './CambioTutorial'
+import { EuchreBoard } from './EuchreBoard'
 
 interface Props {
   gameState: GameState
@@ -177,7 +178,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             <span className="text-xs font-semibold self-center mr-1" style={{ color: 'var(--text-muted)' }}>
               R{gameState.roundNumber}
             </span>
-            {gameType !== 'cambio' && gameType !== 'blackjack' && (
+            {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && (
               <TopBtn
                 onClick={() => !myHasPassed && send({ type: 'pass_turn' })}
                 disabled={myHasPassed}
@@ -210,7 +211,13 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           <TurnBanner gameState={gameState} myPlayerId={myPlayerId} />
         )}
 
-        {gameType === 'cambio' ? (
+        {gameType === 'euchre' ? (
+          <EuchreBoard
+            gameState={gameState}
+            myPlayerId={myPlayerId}
+            send={send}
+          />
+        ) : gameType === 'cambio' ? (
           <CambioBoard
             gameState={gameState}
             myPlayerId={myPlayerId}
@@ -297,7 +304,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       </div>
 
       {/* ── My hand (hidden for Cambio; dealer has no player hand in Blackjack) ── */}
-      {gameType !== 'cambio' && !(gameType === 'blackjack' && myPlayerId === gameState.blackjackDealerId) && (
+      {gameType !== 'cambio' && gameType !== 'euchre' && !(gameType === 'blackjack' && myPlayerId === gameState.blackjackDealerId) && (
       <div className="flex-shrink-0 pb-safe" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
         {/* Your turn CTA — blackjack shows Hit/Stand instead */}
         {gameType === 'blackjack' ? (
@@ -362,9 +369,6 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         <div className="flex gap-2 justify-center px-4 pt-1 pb-2">
           {gameType === 'poker' && !me?.isFolded && (
             <ActionPill onClick={() => send({ type: 'fold' })} danger>Fold</ActionPill>
-          )}
-          {isHost && gameType === 'euchre' && (
-            <TrumpSelector current={gameState.trumpSuit} onSelect={s => send({ type: 'set_trump', suit: s })} />
           )}
         </div>
       </div>

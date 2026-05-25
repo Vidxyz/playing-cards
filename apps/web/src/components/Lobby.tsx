@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
-import { CambioTutorialModal, BluffTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal } from './CambioTutorial'
 
 const GAMES: {
   type: GameType; label: string; desc: string; icon: string; min: number; max: number
@@ -24,6 +24,7 @@ interface Props {
 export function Lobby({ gameState, myPlayerId, send }: Props) {
   const [showCambioTutorial, setShowCambioTutorial] = useState(false)
   const [showBluffTutorial, setShowBluffTutorial] = useState(false)
+  const [showEuchreTutorial, setShowEuchreTutorial] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
   const isHost = me?.isHost ?? false
   const playerCount = gameState.players.length
@@ -94,20 +95,18 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
             {GAMES.map(game => {
               const tooFew  = playerCount < game.min
               const tooMany = playerCount > game.max
-              const disabled = tooFew || tooMany
+              const playerMismatch = tooFew || tooMany
               const active = selectedGame === game.type
 
               return (
                 <button
                   key={game.type}
-                  disabled={disabled}
                   onClick={() => send({ type: 'set_game', gameType: game.type })}
                   className="flex flex-col items-start text-left rounded-xl p-3 transition-all active:scale-95"
                   style={{
                     background: active ? 'var(--accent-dim)' : 'var(--surface)',
                     border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
-                    opacity: disabled ? 0.38 : 1,
-                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    cursor: 'pointer',
                   }}
                 >
                   <span className="text-xl mb-1.5">{game.icon}</span>
@@ -115,16 +114,33 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
                     {game.label}
                   </span>
                   <span className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{game.desc}</span>
-                  <span className="text-[10px] mt-1" style={{ color: 'var(--text-dim)' }}>
-                    {disabled
-                      ? (tooFew ? `Need ${game.min}+ players` : `Max ${game.max}`)
-                      : `${game.min}–${game.max} players`}
+                  <span className="text-[10px] mt-1" style={{ color: playerMismatch ? '#f87171' : 'var(--text-dim)' }}>
+                    {game.min === game.max ? `${game.min} players` : `${game.min}–${game.max} players`}
+                    {active && playerMismatch && (tooFew ? ` · need ${game.min - playerCount} more` : ` · too many`)}
                   </span>
                 </button>
               )
             })}
           </div>
         </Section>
+      )}
+
+      {/* Euchre — how to play (visible to all players) */}
+      {selectedGame === 'euchre' && (
+        <div className="px-4 mb-4">
+          <button
+            onClick={() => setShowEuchreTutorial(true)}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 flex items-center justify-center gap-2"
+            style={{
+              background: 'var(--surface)',
+              color: 'var(--text-muted)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <span>📖</span>
+            How to play Euchre
+          </button>
+        </div>
       )}
 
       {/* Cambio — how to play (visible to all players) */}
@@ -307,6 +323,10 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
         <BluffTutorialModal onClose={() => setShowBluffTutorial(false)} />
       )}
 
+      {showEuchreTutorial && (
+        <EuchreTutorialModal onClose={() => setShowEuchreTutorial(false)} />
+      )}
+
       {/* Action */}
       <div className="px-4 pb-10 pt-2">
         {isHost ? (
@@ -321,7 +341,7 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
               cursor: canDeal ? 'pointer' : 'not-allowed',
             }}
           >
-            {canDeal ? 'Deal Cards' : selectedGame ? `Need ${selectedConfig?.min}+ players` : 'Select a game above'}
+            {canDeal ? 'Deal Cards' : !selectedGame ? 'Select a game above' : playerCount < (selectedConfig?.min ?? 2) ? `Need ${(selectedConfig?.min ?? 2) - playerCount} more player${(selectedConfig?.min ?? 2) - playerCount > 1 ? 's' : ''}` : `Too many players (max ${selectedConfig?.max})`}
           </button>
         ) : (
           <button

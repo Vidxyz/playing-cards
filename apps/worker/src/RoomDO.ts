@@ -5,6 +5,10 @@ import type {
 import { buildDeck, shuffle } from './game/deck'
 import { buildZones, dealCards } from './game/deal'
 import { getConfig } from './game/zones'
+import {
+  biddingOrder, findPartner, isTrump, effectiveSuit,
+  determineTrickWinner, isLeftBower,
+} from './game/euchre'
 
 interface Session {
   ws: WebSocket
@@ -86,6 +90,13 @@ export class RoomDO implements DurableObject {
           bluffHistory: [],
           bluffPassCount: 0,
           bluffPassedPlayerIds: [],
+          euchrePhase: null,
+          euchreTopCard: null,
+          euchreDealerPlayerId: null,
+          euchreMakerPlayerId: null,
+          euchreGoingAlone: false,
+          euchreBidPassCount: 0,
+          euchreCurrentTrickLedSuit: null,
           blackjackDealerId: null,
           cambioDrawn: null,
           cambioPower: null,
@@ -185,7 +196,11 @@ export class RoomDO implements DurableObject {
         return
 
       case 'play_cards':
-        this.handlePlayCards(gs, player, event.cardIds, event.toZoneId, event.bluffClaim)
+        if (gs.gameType === 'euchre' && gs.euchrePhase === 'playing') {
+          this.handleEuchreTrickPlay(gs, player, event.cardIds[0])
+        } else {
+          this.handlePlayCards(gs, player, event.cardIds, event.toZoneId, event.bluffClaim)
+        }
         break
 
       case 'move_card':
@@ -279,6 +294,22 @@ export class RoomDO implements DurableObject {
         gs.bluffJokers = event.count
         break
 
+      case 'euchre_order_up':
+        this.handleEuchreOrderUp(gs, player, event.goAlone ?? false)
+        break
+
+      case 'euchre_pass':
+        this.handleEuchrePass(gs, player)
+        break
+
+      case 'euchre_call_suit':
+        this.handleEuchreCallSuit(gs, player, event.suit, event.goAlone ?? false)
+        break
+
+      case 'euchre_discard':
+        this.handleEuchreDiscard(gs, player, event.cardId)
+        break
+
       case 'update_score':
         this.handleUpdateScore(gs, event.targetId, event.delta, event.targetType)
         break
@@ -367,6 +398,13 @@ export class RoomDO implements DurableObject {
         bluffHistory: [],
         bluffPassCount: 0,
         bluffPassedPlayerIds: [],
+        euchrePhase: null,
+        euchreTopCard: null,
+        euchreDealerPlayerId: null,
+        euchreMakerPlayerId: null,
+        euchreGoingAlone: false,
+        euchreBidPassCount: 0,
+        euchreCurrentTrickLedSuit: null,
         blackjackDealerId: null,
         cambioDrawn: null,
         cambioPower: null,
@@ -462,6 +500,34 @@ export class RoomDO implements DurableObject {
         gs.turnOrder.push(dealerId)
       }
     }
+    // Euchre: pick/rotate dealer, set up bidding
+    if (gs.gameType === 'euchre') {
+      const prevDealerSeat = gs.euchreDealerPlayerId
+        ? (gs.players.find(p => p.id === gs.euchreDealerPlayerId)?.seatIndex ?? -1)
+        : -1
+      const sorted = [...gs.players].sort((a, b) => a.seatIndex - b.seatIndex)
+      const dealerId = prevDealerSeat === -1
+        ? sorted[Math.floor(Math.random() * sorted.length)].id
+        : sorted[(sorted.findIndex(p => p.seatIndex === prevDealerSeat) + 1) % sorted.length].id
+      gs.euchreDealerPlayerId = dealerId
+      gs.euchreTopCard = gs.zones.find(z => z.id === 'kitty')?.cards.at(-1) ?? null
+      gs.euchrePhase = 'bidding1'
+      gs.euchreBidPassCount = 0
+      gs.euchreMakerPlayerId = null
+      gs.euchreGoingAlone = false
+      gs.euchreCurrentTrickLedSuit = null
+      gs.trumpSuit = null
+      const order = biddingOrder(gs.players, dealerId)
+      gs.turnOrder = order
+      gs.currentTurnPlayerId = order[0]
+      gs.roundNumber++
+      gs.phase = 'playing'
+      gs.lastAction = { type: 'deal', playerId: gs.hostId, timestamp: Date.now() }
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
+
     gs.currentTurnPlayerId = gs.turnOrder[0]
     gs.roundNumber++
     gs.phase = 'playing'
@@ -682,6 +748,179 @@ export class RoomDO implements DurableObject {
     }
   }
 
+  // ── Euchre handlers ──────────────────────────────────────────────────────
+
+  private handleEuchreOrderUp(gs: GameState, player: Player, goAlone: boolean): void {
+    if (gs.euchrePhase !== 'bidding1' || gs.currentTurnPlayerId !== player.id) return
+    if (!gs.euchreTopCard) return
+    gs.trumpSuit = gs.euchreTopCard.suit
+    gs.euchreMakerPlayerId = player.id
+    gs.euchreGoingAlone = goAlone
+    // Give top card to dealer
+    const kitty = gs.zones.find(z => z.id === 'kitty')
+    const dealerHand = gs.zones.find(z => z.id === `hand-${gs.euchreDealerPlayerId}`)
+    if (kitty && dealerHand) {
+      const idx = kitty.cards.findIndex(c => c.id === gs.euchreTopCard!.id)
+      if (idx !== -1) dealerHand.cards.push(...kitty.cards.splice(idx, 1))
+    }
+    gs.euchrePhase = 'discard'
+    gs.currentTurnPlayerId = gs.euchreDealerPlayerId
+    gs.lastAction = { type: 'play', playerId: player.id, timestamp: Date.now() }
+  }
+
+  private handleEuchrePass(gs: GameState, player: Player): void {
+    if (gs.currentTurnPlayerId !== player.id) return
+    if (gs.euchrePhase === 'bidding1') {
+      gs.euchreBidPassCount++
+      if (gs.euchreBidPassCount >= gs.turnOrder.length) {
+        gs.euchrePhase = 'bidding2'
+        gs.euchreBidPassCount = 0
+        gs.currentTurnPlayerId = gs.turnOrder[0]
+      } else {
+        this.advanceTurn(gs)
+      }
+    } else if (gs.euchrePhase === 'bidding2') {
+      if (player.id === gs.euchreDealerPlayerId) return // stick the dealer — cannot pass
+      gs.euchreBidPassCount++
+      this.advanceTurn(gs)
+    }
+    gs.lastAction = { type: 'pass', playerId: player.id, timestamp: Date.now() }
+  }
+
+  private handleEuchreCallSuit(gs: GameState, player: Player, suit: Suit, goAlone: boolean): void {
+    if (gs.euchrePhase !== 'bidding2' || gs.currentTurnPlayerId !== player.id) return
+    gs.trumpSuit = suit
+    gs.euchreMakerPlayerId = player.id
+    gs.euchreGoingAlone = goAlone
+    this.startEuchrePlaying(gs)
+    gs.lastAction = { type: 'play', playerId: player.id, timestamp: Date.now() }
+  }
+
+  private handleEuchreDiscard(gs: GameState, player: Player, cardId: string): void {
+    if (gs.euchrePhase !== 'discard' || player.id !== gs.euchreDealerPlayerId) return
+    const hand = gs.zones.find(z => z.id === `hand-${player.id}`)
+    const kitty = gs.zones.find(z => z.id === 'kitty')
+    if (!hand || !kitty) return
+    const idx = hand.cards.findIndex(c => c.id === cardId)
+    if (idx === -1) return
+    kitty.cards.push(...hand.cards.splice(idx, 1))
+    gs.euchreTopCard = null
+    this.startEuchrePlaying(gs)
+    gs.lastAction = { type: 'play', playerId: player.id, timestamp: Date.now() }
+  }
+
+  private startEuchrePlaying(gs: GameState): void {
+    gs.euchrePhase = 'playing'
+    gs.euchreCurrentTrickLedSuit = null
+    const dealerId = gs.euchreDealerPlayerId!
+    let order = biddingOrder(gs.players, dealerId) // [left-of-dealer, ..., dealer]
+    if (gs.euchreGoingAlone && gs.euchreMakerPlayerId) {
+      const partner = findPartner(gs.players, gs.euchreMakerPlayerId)
+      if (partner) order = order.filter(id => id !== partner.id)
+    }
+    gs.turnOrder = order
+    gs.currentTurnPlayerId = order[0]
+    // Reset trick counts for new hand
+    for (const p of gs.players) p.trickCount = 0
+  }
+
+  private handleEuchreTrickPlay(gs: GameState, player: Player, cardId: string): void {
+    if (gs.currentTurnPlayerId !== player.id) return
+    const hand = gs.zones.find(z => z.id === `hand-${player.id}`)
+    if (!hand) return
+    const cardIdx = hand.cards.findIndex(c => c.id === cardId)
+    if (cardIdx === -1) return
+    const card = hand.cards[cardIdx]
+    const trump = gs.trumpSuit!
+
+    // Follow-suit enforcement: if a card of the led suit was led, player must follow if able
+    if (gs.euchreCurrentTrickLedSuit !== null) {
+      const canFollow = hand.cards.some(
+        c => effectiveSuit(c, trump) === gs.euchreCurrentTrickLedSuit
+      )
+      if (canFollow && effectiveSuit(card, trump) !== gs.euchreCurrentTrickLedSuit) return
+    }
+
+    // Move card to trick zone
+    hand.cards.splice(cardIdx, 1)
+    const trickZone = gs.zones.find(z => z.id === `trick-${player.id}`)
+    if (!trickZone) return
+    trickZone.cards.push(card)
+
+    // Set led suit from first card played
+    if (gs.euchreCurrentTrickLedSuit === null) {
+      gs.euchreCurrentTrickLedSuit = effectiveSuit(card, trump)
+    }
+
+    gs.lastAction = { type: 'play', playerId: player.id, cardIds: [cardId], toZoneId: `trick-${player.id}`, timestamp: Date.now() }
+
+    // Check if trick complete
+    const allPlayed = gs.turnOrder.every(pid => {
+      const tz = gs.zones.find(z => z.id === `trick-${pid}`)
+      return (tz?.cards.length ?? 0) > 0
+    })
+    if (allPlayed) {
+      this.resolveEuchreTrick(gs)
+    } else {
+      this.advanceTurn(gs)
+    }
+  }
+
+  private resolveEuchreTrick(gs: GameState): void {
+    const trump = gs.trumpSuit!
+    const ledSuit = gs.euchreCurrentTrickLedSuit!
+
+    const plays = gs.turnOrder.map(pid => {
+      const tz = gs.zones.find(z => z.id === `trick-${pid}`)!
+      return { playerId: pid, card: tz.cards[0] }
+    })
+
+    const winnerId = determineTrickWinner(plays, trump, ledSuit)
+    const winner = gs.players.find(p => p.id === winnerId)!
+    winner.trickCount++
+
+    // Move trick cards to winning team's pile
+    const tricksZoneId = winner.teamId === 'team-a' ? 'tricks-a' : 'tricks-b'
+    const tricksZone = gs.zones.find(z => z.id === tricksZoneId)!
+    for (const play of plays) {
+      const tz = gs.zones.find(z => z.id === `trick-${play.playerId}`)!
+      tricksZone.cards.push(...tz.cards)
+      tz.cards = []
+    }
+    gs.euchreCurrentTrickLedSuit = null
+
+    const totalTricks = gs.players.reduce((s, p) => s + p.trickCount, 0)
+    if (totalTricks >= 5) {
+      this.scoreEuchreHand(gs)
+    } else {
+      gs.currentTurnPlayerId = winnerId
+    }
+  }
+
+  private scoreEuchreHand(gs: GameState): void {
+    const maker = gs.players.find(p => p.id === gs.euchreMakerPlayerId)!
+    const makerTeam   = gs.teams.find(t => t.id === maker.teamId)!
+    const defenderTeam = gs.teams.find(t => t.id !== maker.teamId)!
+
+    const makerTricks = gs.players
+      .filter(p => p.teamId === makerTeam.id)
+      .reduce((s, p) => s + p.trickCount, 0)
+
+    if (makerTricks >= 3) {
+      const allFive = makerTricks === 5
+      makerTeam.roundScore = allFive ? (gs.euchreGoingAlone ? 4 : 2) : 1
+      defenderTeam.roundScore = 0
+    } else {
+      makerTeam.roundScore = 0
+      defenderTeam.roundScore = 2 // euchred
+    }
+
+    gs.euchrePhase = null
+    gs.phase = 'round-over'
+  }
+
+  // ── End Euchre handlers ───────────────────────────────────────────────────
+
   private handleBluffPassClear(gs: GameState, passingPlayerId: string): void {
     const bluffZone = gs.zones.find(z => z.isBluffPile)
     if (bluffZone) {
@@ -709,6 +948,28 @@ export class RoomDO implements DurableObject {
     for (const team of gs.teams) {
       team.totalScore += team.roundScore
       team.roundScore = 0
+    }
+
+    // Reset euchre bidding state (dealer is preserved for rotation in handleDeal)
+    gs.euchrePhase = null
+    gs.euchreTopCard = null
+    gs.euchreMakerPlayerId = null
+    gs.euchreGoingAlone = false
+    gs.euchreBidPassCount = 0
+    gs.euchreCurrentTrickLedSuit = null
+
+    // Euchre: check for game over (10 pts), then redeal
+    if (gs.gameType === 'euchre') {
+      const winner = gs.teams.find(t => t.totalScore >= 10)
+      if (winner) {
+        gs.phase = 'game-over'
+        await this.saveState(gs)
+        await this.broadcastState(gs)
+        return
+      }
+      // Redeal (handleDeal will rotate dealer)
+      await this.handleDeal(gs)
+      return
     }
 
     gs.phase = 'lobby'
