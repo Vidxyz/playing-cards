@@ -31,6 +31,51 @@ interface Props {
   errorMsg?: string | null
 }
 
+// ── Rummy go-out validation (mirrors server logic) ────────────
+const _RUMMY_RI: Record<string, number> = Object.fromEntries(
+  ['A','2','3','4','5','6','7','8','9','10','J','Q','K'].map((r, i) => [r, i])
+)
+function _isRummyMeld(cards: CardType[]): boolean {
+  if (cards.length < 3) return false
+  const nj = cards.filter(c => c.rank !== 'JKR')
+  if (nj.length === 0) return false
+  if (nj.every(c => c.rank === nj[0].rank)) return cards.length <= 4
+  if (!nj.every(c => c.suit === nj[0].suit)) return false
+  const idxs = nj.map(c => _RUMMY_RI[c.rank])
+  if (idxs.some(i => i === undefined)) return false
+  const s = [...idxs].sort((a, b) => a - b)
+  for (let i = 1; i < s.length; i++) if (s[i] === s[i - 1]) return false
+  return s[s.length - 1] - s[0] + 1 <= cards.length
+}
+function _isPureRun(cards: CardType[]): boolean {
+  if (cards.some(c => c.rank === 'JKR')) return false
+  if (cards.every(c => c.rank === cards[0].rank)) return false
+  return _isRummyMeld(cards)
+}
+function checkRummyGoOut(cards: CardType[]): 'ok' | 'cant-meld' | 'no-pure-run' {
+  let foundOk = false
+  let foundComplete = false
+  function bt(rem: CardType[], hasPureRun: boolean): void {
+    if (foundOk) return
+    if (rem.length === 0) { foundComplete = true; if (hasPureRun) foundOk = true; return }
+    if (rem.length < 3) return
+    const [anchor, ...others] = rem
+    const n = others.length
+    for (let mask = 0; mask < (1 << n); mask++) {
+      if (foundOk) return
+      const sub: CardType[] = []
+      for (let i = 0; i < n; i++) if (mask & (1 << i)) sub.push(others[i])
+      const meld = [anchor, ...sub]
+      if (meld.length < 3 || !_isRummyMeld(meld)) continue
+      bt(others.filter((_, i) => !(mask & (1 << i))), hasPureRun || _isPureRun(meld))
+    }
+  }
+  bt(cards, false)
+  if (foundOk) return 'ok'
+  if (foundComplete) return 'no-pure-run'
+  return 'cant-meld'
+}
+
 const SUIT_SYMBOL: Record<string, string> = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }
 const SUIT_OPTS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs']
 const GAME_LABEL: Record<string, string> = {
@@ -54,8 +99,14 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const [bluffPileFlash, setBluffPileFlash] = useState(false)
   const [showDoubleDeckToast, setShowDoubleDeckToast] = useState(false)
   const [exchangeBannerReady, setExchangeBannerReady] = useState(false)
+  const [rummyGoOutError, setRummyGoOutError] = useState<string | null>(null)
   const exchangeBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rummyGoOutErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const gameStateRef = useRef(gameState)
   const bluffPileCountRef = useRef(0)
+
+  // Keep gameStateRef current so handlePlayCards can read latest zones without deps
+  useEffect(() => { gameStateRef.current = gameState })
 
   useEffect(() => {
     if (gameState.phase !== 'round-over') return
@@ -94,7 +145,9 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
     ? !burnInProgress && (isInExchangePhase
       || isInDiscardPhase
       || (!exchangePhaseActive && !discardPhaseActive && isMyTurn && !presidentHasPassed && !presidentHasFinished))
-    : isMyTurn
+    : gameType === 'rummy'
+      ? isMyTurn && gameState.rummyHasDrawn
+      : isMyTurn
 
   useEffect(() => {
     if (lastAction?.type === 'bluff_reveal') {
@@ -159,12 +212,32 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
     .map(z => ({ id: z.id, name: z.name, isBluffPile: z.isBluffPile }))
 
   const handlePlayCards = useCallback((cardIds: string[], toZoneId: string, claim?: { rank: string }) => {
+    if (gameType === 'rummy') {
+      const cardId = cardIds[0]
+      if (!cardId) return
+      if (toZoneId === 'go-out') {
+        const handZone = gameStateRef.current.zones.find(z => z.id === `hand-${myPlayerId}`)
+        const remaining = (handZone?.cards ?? []).filter(c => c.id !== cardId)
+        const result = checkRummyGoOut(remaining)
+        if (result !== 'ok') {
+          const msg = result === 'cant-meld'
+            ? "Your hand can't be fully melded — not all cards form valid sets or runs"
+            : 'You need at least one natural run (no jokers) to go out'
+          setRummyGoOutError(msg)
+          if (rummyGoOutErrTimerRef.current) clearTimeout(rummyGoOutErrTimerRef.current)
+          rummyGoOutErrTimerRef.current = setTimeout(() => setRummyGoOutError(null), 4000)
+          return
+        }
+      }
+      send({ type: 'rummy_discard', cardId, faceDown: toZoneId === 'go-out' })
+      return
+    }
     if (gameType === 'president') {
       send({ type: 'play_cards', cardIds, toZoneId, wildRank: claim?.rank })
     } else {
       send({ type: 'play_cards', cardIds, toZoneId, bluffClaim: claim })
     }
-  }, [send, gameType])
+  }, [send, gameType, myPlayerId])
 
   const handleRunDiscard = useCallback((cardIds: string[]) => {
     send({ type: 'president_run_discard', cardIds })
@@ -410,7 +483,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         )}
       </div>
 
-      {/* ── My hand (hidden for Cambio/Euchre/Poker/Go Fish) ── */}
+      {/* ── My hand (hidden for games with their own hand rendering) ── */}
       {gameType !== 'cambio' && gameType !== 'euchre' && gameType !== 'poker' && gameType !== 'go-fish' && (
       <div className="flex-shrink-0 pb-safe" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
         {/* Your turn CTA — blackjack shows Hit/Stand/Split instead */}
@@ -576,7 +649,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           )
         })() : (
           <>
-            {isMyTurn && gameState.turnOrder.length > 0 && (
+            {isMyTurn && gameState.turnOrder.length > 0 && gameType !== 'rummy' && (
               <div className="px-4 pt-2 fade-in">
                 <div className="w-full py-2 rounded-xl text-center"
                   style={{ background: 'var(--accent)', boxShadow: '0 0 16px rgba(245,158,11,0.25)' }}>
@@ -643,7 +716,12 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                   : isInDiscardPhase
                     ? (cardIds) => handleRunDiscard(cardIds)
                     : handlePlayCards}
-                targetZones={playTargets}
+                targetZones={gameType === 'rummy'
+                  ? [
+                      { id: 'discard', name: 'Discard', isBluffPile: false },
+                      { id: 'go-out', name: 'Go Out', isBluffPile: false },
+                    ]
+                  : playTargets}
                 isMyTurn={handIsMyTurn}
                 gameType={gameType ?? undefined}
                 bluffActiveRank={gameState.bluffActiveRank}
@@ -762,6 +840,32 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       )}
 
       {errorMsg && <Toast message={errorMsg} />}
+
+      {rummyGoOutError && (
+        <div
+          className="card-slide"
+          style={{
+            position: 'fixed',
+            top: errorMsg ? 100 : 60,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 601,
+            background: 'rgba(180,83,9,0.95)',
+            color: '#fff',
+            padding: '10px 18px',
+            borderRadius: 12,
+            fontSize: 13,
+            fontWeight: 700,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+            maxWidth: 320,
+            textAlign: 'center',
+            pointerEvents: 'none',
+            lineHeight: 1.4,
+          }}
+        >
+          {rummyGoOutError}
+        </div>
+      )}
     </div>
   )
 }

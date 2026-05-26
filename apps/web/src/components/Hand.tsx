@@ -33,6 +33,97 @@ function sortedForGame(cards: CardType[], gameType?: string): string[] {
 
 const AUTO_SORT_GAMES = new Set(['bluff', 'president'])
 
+// A=0 … K=12 (no JKR — jokers are wildcards, not ranked in run/set math)
+const RUMMY_RANK_IDX: Record<string, number> = Object.fromEntries(
+  ['A','2','3','4','5','6','7','8','9','10','J','Q','K'].map((r, i) => [r, i])
+)
+const SUIT_ORDER: Record<string, number> = { spades: 0, clubs: 1, hearts: 2, diamonds: 3 }
+
+// Games where auto-arrange is not useful
+const NO_AUTO_ARRANGE_GAMES = new Set(['cambio'])
+
+// ── Rummy meld validation (mirrors server) ─────────────────────
+function isRummyMeld(cards: CardType[]): boolean {
+  if (cards.length < 3) return false
+  const nj = cards.filter(c => c.rank !== 'JKR')
+  if (nj.length === 0) return false
+  // Set: all same rank, max 4
+  if (nj.every(c => c.rank === nj[0].rank)) return cards.length <= 4
+  // Run: same suit, no duplicate indices, span ≤ total cards
+  if (!nj.every(c => c.suit === nj[0].suit)) return false
+  const idxs = nj.map(c => RUMMY_RANK_IDX[c.rank])
+  if (idxs.some(i => i === undefined)) return false
+  const sorted = [...idxs].sort((a, b) => a - b)
+  for (let i = 1; i < sorted.length; i++) if (sorted[i] === sorted[i - 1]) return false
+  return sorted[sorted.length - 1] - sorted[0] + 1 <= cards.length
+}
+
+// ── Backtracking: find meld partition that maximises melded cards ──
+function findBestRummyGroups(cards: CardType[]): { melds: CardType[][], deadwood: CardType[] } {
+  let bestCount = -1
+  let best = { melds: [] as CardType[][], deadwood: [...cards] }
+
+  function bt(rem: CardType[], melds: CardType[][], dead: CardType[]): void {
+    if (rem.length < 3) {
+      const count = melds.reduce((s, m) => s + m.length, 0)
+      if (count > bestCount) {
+        bestCount = count
+        best = { melds: melds.map(m => [...m]), deadwood: [...dead, ...rem] }
+      }
+      return
+    }
+    const anchor = rem[0]
+    const others = rem.slice(1)
+    const n = others.length
+    // Try every subset of `others` that forms a valid meld with `anchor`
+    for (let mask = 0; mask < (1 << n); mask++) {
+      const sub: CardType[] = []
+      for (let i = 0; i < n; i++) if (mask & (1 << i)) sub.push(others[i])
+      const meld = [anchor, ...sub]
+      if (meld.length < 3 || !isRummyMeld(meld)) continue
+      bt(others.filter((_, i) => !(mask & (1 << i))), [...melds, meld], dead)
+    }
+    // Also try sending anchor to deadwood and searching the rest
+    bt(others, melds, [...dead, anchor])
+  }
+
+  bt(cards, [], [])
+  return best
+}
+
+function autoArrangeForGame(cards: CardType[], gameType?: string): string[] {
+  if (gameType && NO_AUTO_ARRANGE_GAMES.has(gameType)) return cards.map(c => c.id)
+  if (AUTO_SORT_GAMES.has(gameType ?? '')) return sortedForGame(cards, gameType)
+  if (gameType === 'rummy') {
+    const { melds, deadwood } = findBestRummyGroups(cards)
+    const result: CardType[] = []
+    // Runs first, then sets — each meld sorted internally
+    const isRun = (m: CardType[]) => {
+      const nj = m.filter(c => c.rank !== 'JKR')
+      return nj.length > 1 && !nj.every(c => c.rank === nj[0].rank)
+    }
+    const ordered = [...melds].sort((a, b) => (isRun(b) ? 1 : 0) - (isRun(a) ? 1 : 0))
+    for (const meld of ordered) {
+      const nj = [...meld.filter(c => c.rank !== 'JKR')]
+      const jkr = meld.filter(c => c.rank === 'JKR')
+      if (isRun(meld)) nj.sort((a, b) => (RUMMY_RANK_IDX[a.rank] ?? 0) - (RUMMY_RANK_IDX[b.rank] ?? 0))
+      else nj.sort((a, b) => (SUIT_ORDER[a.suit] ?? 0) - (SUIT_ORDER[b.suit] ?? 0))
+      result.push(...nj, ...jkr)
+    }
+    // Deadwood: suit then rank, jokers last
+    const dw = [...deadwood].sort((a, b) => {
+      if ((a.rank === 'JKR') !== (b.rank === 'JKR')) return a.rank === 'JKR' ? 1 : -1
+      const sd = (SUIT_ORDER[a.suit] ?? 0) - (SUIT_ORDER[b.suit] ?? 0)
+      if (sd !== 0) return sd
+      return (RUMMY_RANK_IDX[a.rank] ?? 13) - (RUMMY_RANK_IDX[b.rank] ?? 13)
+    })
+    result.push(...dw)
+    return result.map(c => c.id)
+  }
+  // Default: sort by rank (covers blackjack, go-fish, euchre, generic)
+  return sortByRank(cards)
+}
+
 // Rank picker rows shown as actual card visuals
 const PICKER_RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
 const PICKER_ROW1: Rank[] = ['A', '2', '3', '4', '5', '6', '7']
@@ -57,6 +148,7 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [targetZoneId, setTargetZoneId] = useState<string>(targetZones[0]?.id || '')
   const [arrangeMode, setArrangeMode] = useState(false)
+  const [arrangeSubMode, setArrangeSubMode] = useState<'swap' | 'slot'>('slot')
   const [movingId, setMovingId] = useState<string | null>(null)
   const [customOrder, setCustomOrder] = useState<string[]>(() =>
     sortedForGame(zone.cards, gameType)
@@ -100,6 +192,12 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
   }, [selected.size])
 
   const isBluffTarget = targetZones.find(z => z.id === targetZoneId)?.isBluffPile ?? false
+  const showAutoArrange = !NO_AUTO_ARRANGE_GAMES.has(gameType ?? '')
+
+  const handleAutoArrange = useCallback(() => {
+    setCustomOrder(autoArrangeForGame(zone.cards, gameType))
+    setMovingId(null)
+  }, [zone.cards, gameType])
 
   const handleCardTap = useCallback((cardId: string) => {
     if (arrangeMode) {
@@ -112,8 +210,14 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
           const next = [...prev]
           const fromIdx = next.indexOf(movingId)
           const toIdx = next.indexOf(cardId)
-          if (fromIdx !== -1 && toIdx !== -1) {
+          if (fromIdx === -1 || toIdx === -1) return prev
+          if (arrangeSubMode === 'swap') {
             ;[next[fromIdx], next[toIdx]] = [next[toIdx], next[fromIdx]]
+          } else {
+            // Slot: remove movingId, insert it immediately after cardId
+            next.splice(fromIdx, 1)
+            const newToIdx = next.indexOf(cardId)
+            next.splice(newToIdx + 1, 0, movingId)
           }
           return next
         })
@@ -127,7 +231,7 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
         return next
       })
     }
-  }, [arrangeMode, movingId])
+  }, [arrangeMode, arrangeSubMode, movingId])
 
   const handlePlay = useCallback(() => {
     if (selected.size === 0 || !targetZoneId) return
@@ -233,23 +337,69 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
       </div>
 
       {/* Arrange toggle */}
-      <div className="flex items-center gap-2 px-4 pb-1">
-        <button
-          onClick={() => { setArrangeMode(a => !a); setMovingId(null); setSelected(new Set()) }}
-          className="text-xs px-2.5 py-1 rounded-full transition-all active:scale-95"
-          style={{
-            background: arrangeMode ? 'var(--accent-dim)' : 'var(--surface-mid)',
-            color: arrangeMode ? 'var(--accent)' : 'var(--text-muted)',
-            border: '1px solid ' + (arrangeMode ? 'rgba(245,158,11,0.3)' : 'var(--border)'),
-          }}
-        >
-          {arrangeMode ? 'Done' : 'Arrange'}
-        </button>
-        {arrangeMode && (
-          <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
-            {movingId ? 'Tap another card to swap' : 'Tap a card to pick up'}
-          </span>
-        )}
+      <div className="flex flex-col gap-1 px-4 pb-1">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setArrangeMode(a => !a); setMovingId(null); setSelected(new Set()); setArrangeSubMode('slot') }}
+            className="text-xs px-2.5 py-1 rounded-full transition-all active:scale-95 flex-shrink-0"
+            style={{
+              background: arrangeMode ? 'var(--accent-dim)' : 'var(--surface-mid)',
+              color: arrangeMode ? 'var(--accent)' : 'var(--text-muted)',
+              border: '1px solid ' + (arrangeMode ? 'rgba(245,158,11,0.3)' : 'var(--border)'),
+            }}
+          >
+            {arrangeMode ? 'Done' : 'Arrange'}
+          </button>
+          {arrangeMode && (
+            <>
+              <button
+                onClick={() => { setArrangeSubMode('swap'); setMovingId(null) }}
+                className="text-xs px-2.5 py-1 rounded-full transition-all active:scale-95 flex-shrink-0"
+                style={{
+                  background: arrangeSubMode === 'swap' ? 'var(--surface-hi)' : 'var(--surface-mid)',
+                  color: arrangeSubMode === 'swap' ? 'var(--text)' : 'var(--text-dim)',
+                  border: '1px solid ' + (arrangeSubMode === 'swap' ? 'var(--border-hi)' : 'var(--border)'),
+                  fontWeight: arrangeSubMode === 'swap' ? 700 : 400,
+                }}
+              >
+                Swap
+              </button>
+              <button
+                onClick={() => { setArrangeSubMode('slot'); setMovingId(null) }}
+                className="text-xs px-2.5 py-1 rounded-full transition-all active:scale-95 flex-shrink-0"
+                style={{
+                  background: arrangeSubMode === 'slot' ? 'var(--surface-hi)' : 'var(--surface-mid)',
+                  color: arrangeSubMode === 'slot' ? 'var(--text)' : 'var(--text-dim)',
+                  border: '1px solid ' + (arrangeSubMode === 'slot' ? 'var(--border-hi)' : 'var(--border)'),
+                  fontWeight: arrangeSubMode === 'slot' ? 700 : 400,
+                }}
+              >
+                Slot
+              </button>
+              {showAutoArrange && (
+                <button
+                  onClick={handleAutoArrange}
+                  className="text-xs px-2.5 py-1 rounded-full transition-all active:scale-95 flex-shrink-0"
+                  style={{
+                    background: 'var(--surface-mid)',
+                    color: 'var(--text-muted)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  Auto
+                </button>
+              )}
+              <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
+                {movingId
+                  ? arrangeSubMode === 'swap'
+                    ? 'Tap another card to swap'
+                    : 'Tap a card to slot after'
+                  : 'Tap a card to pick up'
+                }
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Action panel */}

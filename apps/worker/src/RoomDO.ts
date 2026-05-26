@@ -610,19 +610,9 @@ export class RoomDO implements DurableObject {
         this.handleRummyDraw(gs, player, event.fromDiscard)
         break
 
-      case 'rummy_lay_meld':
-        if (gs.gameType !== 'rummy' || gs.currentTurnPlayerId !== playerId) return
-        await this.handleRummyLayMeld(gs, player, event.cardIds)
-        return
-
-      case 'rummy_extend_meld':
-        if (gs.gameType !== 'rummy' || gs.currentTurnPlayerId !== playerId) return
-        await this.handleRummyExtendMeld(gs, player, event.cardId, event.meldIndex)
-        return
-
       case 'rummy_discard':
         if (gs.gameType !== 'rummy' || gs.currentTurnPlayerId !== playerId) return
-        await this.handleRummyDiscard(gs, player, event.cardId)
+        await this.handleRummyDiscard(gs, player, event.cardId, event.faceDown ?? false)
         return
 
       case 'gofish_ask':
@@ -2501,72 +2491,7 @@ export class RoomDO implements DurableObject {
     }
   }
 
-  private async handleRummyLayMeld(gs: GameState, player: Player, cardIds: string[]): Promise<void> {
-    if (!gs.rummyHasDrawn) return
-    if (cardIds.length < 3) return
-
-    const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
-    if (!handZone) return
-
-    const meldCards: Card[] = []
-    for (const id of cardIds) {
-      const card = handZone.cards.find(c => c.id === id)
-      if (!card) return
-      meldCards.push(card)
-    }
-
-    if (!this.isValidRummyMeld(meldCards)) return
-
-    for (const id of cardIds) {
-      const idx = handZone.cards.findIndex(c => c.id === id)
-      if (idx !== -1) handZone.cards.splice(idx, 1)
-    }
-
-    if (!gs.rummyMelds[player.id]) gs.rummyMelds[player.id] = []
-    gs.rummyMelds[player.id].push(meldCards)
-
-    gs.lastAction = { type: 'play', playerId: player.id, cardIds, timestamp: Date.now() }
-
-    if (handZone.cards.length === 0) {
-      await this.endRummyRound(gs, player.id)
-      return
-    }
-
-    await this.saveState(gs)
-    await this.broadcastState(gs)
-  }
-
-  private async handleRummyExtendMeld(gs: GameState, player: Player, cardId: string, meldIndex: number): Promise<void> {
-    if (!gs.rummyHasDrawn) return
-
-    const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
-    if (!handZone) return
-
-    const myMelds = gs.rummyMelds[player.id]
-    if (!myMelds || meldIndex < 0 || meldIndex >= myMelds.length) return
-
-    const card = handZone.cards.find(c => c.id === cardId)
-    if (!card) return
-
-    const extendedMeld = [...myMelds[meldIndex], card]
-    if (!this.isValidRummyMeld(extendedMeld)) return
-
-    const idx = handZone.cards.findIndex(c => c.id === cardId)
-    if (idx !== -1) handZone.cards.splice(idx, 1)
-    myMelds[meldIndex] = extendedMeld
-
-    gs.lastAction = { type: 'play', playerId: player.id, cardIds: [cardId], timestamp: Date.now() }
-
-    if (handZone.cards.length === 0) {
-      await this.endRummyRound(gs, player.id)
-      return
-    }
-
-    await this.saveState(gs)
-    await this.broadcastState(gs)
-  }
-
-  private async handleRummyDiscard(gs: GameState, player: Player, cardId: string): Promise<void> {
+  private async handleRummyDiscard(gs: GameState, player: Player, cardId: string, faceDown: boolean): Promise<void> {
     if (!gs.rummyHasDrawn) return
 
     const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
@@ -2575,6 +2500,20 @@ export class RoomDO implements DurableObject {
     const idx = handZone.cards.findIndex(c => c.id === cardId)
     if (idx === -1) return
 
+    if (faceDown) {
+      // Going out: all remaining cards must meld AND at least one meld must be a pure run
+      const remaining = handZone.cards.filter(c => c.id !== cardId)
+      if (!this.canCompletelyMeldWithPureRun(remaining)) return
+      const [card] = handZone.cards.splice(idx, 1)
+      const discardZone = gs.zones.find(z => z.id === 'discard')
+      if (discardZone) discardZone.cards.push(card)
+      gs.rummyHasDrawn = false
+      gs.lastAction = { type: 'play', playerId: player.id, cardIds: [cardId], toZoneId: 'discard', timestamp: Date.now() }
+      await this.endRummyRound(gs, player.id)
+      return
+    }
+
+    // Normal face-up discard
     const [card] = handZone.cards.splice(idx, 1)
     const discardZone = gs.zones.find(z => z.id === 'discard')
     if (discardZone) discardZone.cards.push(card)
@@ -2582,14 +2521,62 @@ export class RoomDO implements DurableObject {
     gs.rummyHasDrawn = false
     gs.lastAction = { type: 'play', playerId: player.id, cardIds: [cardId], toZoneId: 'discard', timestamp: Date.now() }
 
-    if (handZone.cards.length === 0) {
-      await this.endRummyRound(gs, player.id)
-      return
-    }
-
     this.advanceTurn(gs)
     await this.saveState(gs)
     await this.broadcastState(gs)
+  }
+
+  private canCompletelyMeld(cards: Card[]): boolean {
+    if (cards.length === 0) return true
+    if (cards.length < 3) return false
+
+    const anchor = cards[0]
+    const others = cards.slice(1)
+    const n = others.length
+
+    for (let mask = 0; mask < (1 << n); mask++) {
+      const subset: Card[] = []
+      for (let i = 0; i < n; i++) {
+        if (mask & (1 << i)) subset.push(others[i])
+      }
+      const meld = [anchor, ...subset]
+      if (meld.length < 3) continue
+      if (!this.isValidRummyMeld(meld)) continue
+      const remaining = others.filter((_, i) => !(mask & (1 << i)))
+      if (this.canCompletelyMeld(remaining)) return true
+    }
+
+    return false
+  }
+
+  // True run with no jokers (wildcards)
+  private isPureRun(cards: Card[]): boolean {
+    if (cards.some(c => c.rank === 'JKR')) return false
+    if (cards.every(c => c.rank === cards[0].rank)) return false  // it's a set
+    return this.isValidRummyMeld(cards)
+  }
+
+  // Backtracking partition search that also tracks whether a pure run has been found
+  private meldPartitionExists(cards: Card[], hasPureRun: boolean): boolean {
+    if (cards.length === 0) return hasPureRun
+    if (cards.length < 3) return false
+    const anchor = cards[0]
+    const others = cards.slice(1)
+    const n = others.length
+    for (let mask = 0; mask < (1 << n); mask++) {
+      const subset: Card[] = []
+      for (let i = 0; i < n; i++) if (mask & (1 << i)) subset.push(others[i])
+      const meld = [anchor, ...subset]
+      if (meld.length < 3 || !this.isValidRummyMeld(meld)) continue
+      const remaining = others.filter((_, i) => !(mask & (1 << i)))
+      if (this.meldPartitionExists(remaining, hasPureRun || this.isPureRun(meld))) return true
+    }
+    return false
+  }
+
+  // All cards meld AND at least one of those melds is a pure (joker-free) run
+  private canCompletelyMeldWithPureRun(cards: Card[]): boolean {
+    return this.meldPartitionExists(cards, false)
   }
 
   private async endRummyRound(gs: GameState, winnerPlayerId: string): Promise<void> {
