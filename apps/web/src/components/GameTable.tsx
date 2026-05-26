@@ -147,6 +147,9 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
     z.ownerId === myPlayerId &&
     (z.id.startsWith('hand-') || z.id.startsWith('hole-cards-'))
   )
+  // Lifted to component scope so the hand-rendering section below can read them
+  const bjHasSplit = gameType === 'blackjack' && (gameState.blackjackSplits?.includes(myPlayerId) ?? false)
+  const bjIsOnSplitHand = bjHasSplit && (gameState.blackjackMainHandDone?.includes(myPlayerId) ?? false)
   const sharedZones = gameState.zones.filter(z => z.ownerId === null)
 
   const playTargets = sharedZones
@@ -421,15 +424,15 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           const totalColor = activeTotal > 21 ? '#fc8181' : activeTotal === 21 ? 'var(--accent)' : 'var(--text)'
 
           return (
-            <div className="px-4 pt-2 pb-2 flex flex-col gap-2">
+            <div className={`px-4 pt-1.5 pb-1.5 flex flex-col ${hasSplit ? 'gap-1' : 'gap-2'}`}>
               {/* Chip + bet info */}
               {myPlayerId in (gameState.blackjackChips ?? {}) && (
                 <div className="flex items-center gap-3 px-1">
                   {/* Chip stack (bank) */}
                   <div className="flex items-center gap-2">
-                    <ChipStack count={gameState.blackjackChips[myPlayerId]} chipSize={26} />
+                    <ChipStack count={gameState.blackjackChips[myPlayerId]} chipSize={hasSplit ? 18 : 26} />
                     <div className="flex flex-col leading-tight">
-                      <span className="text-xl font-black" style={{ color: 'var(--text)' }}>
+                      <span className={`${hasSplit ? 'text-sm' : 'text-xl'} font-black`} style={{ color: 'var(--text)' }}>
                         {gameState.blackjackChips[myPlayerId].toLocaleString()}
                       </span>
                       <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>chips</span>
@@ -464,13 +467,13 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
 
               {/* Hand total display — always visible during play */}
               {gameState.phase !== 'round-over' && !myMainBust && (
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl"
+                <div className="flex items-center gap-2">
+                  <div className={`flex-1 flex items-center justify-center gap-2 ${hasSplit ? 'py-1' : 'py-2'} rounded-xl`}
                     style={{ background: 'var(--surface-hi)', border: `1px solid ${!isOnSplitHand ? 'var(--accent)' : 'var(--border-hi)'}` }}>
                     <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-dim)' }}>
-                      {hasSplit ? 'Hand 1' : 'Total'}
+                      {hasSplit ? 'H1' : 'Total'}
                     </span>
-                    <span className="text-xl font-black"
+                    <span className={`${hasSplit ? 'text-base' : 'text-xl'} font-black`}
                       style={{ color: mainTotal > 21 ? '#fc8181' : mainTotal === 21 ? 'var(--accent)' : 'var(--text)' }}>
                       {mainTotal}
                     </span>
@@ -479,10 +482,10 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                     )}
                   </div>
                   {hasSplit && (
-                    <div className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl"
+                    <div className={`flex-1 flex items-center justify-center gap-2 py-1 rounded-xl`}
                       style={{ background: 'var(--surface-hi)', border: `1px solid ${isOnSplitHand ? 'var(--accent)' : 'var(--border-hi)'}` }}>
-                      <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-dim)' }}>Hand 2</span>
-                      <span className="text-xl font-black"
+                      <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-dim)' }}>H2</span>
+                      <span className="text-base font-black"
                         style={{ color: splitTotal > 21 ? '#fc8181' : splitTotal === 21 ? 'var(--accent)' : 'var(--text)' }}>
                         {splitTotal}
                       </span>
@@ -597,27 +600,53 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             border: '2.5px solid var(--accent)',
           } : {}}
         >
-          {myHandZones.map(zone => (
-            <Hand
-              key={zone.id}
-              zone={zone}
-              onPlayCards={isInExchangePhase
-                ? (cardIds) => handleExchangeReturn(cardIds)
-                : isInDiscardPhase
-                  ? (cardIds) => handleRunDiscard(cardIds)
-                  : handlePlayCards}
-              targetZones={playTargets}
-              isMyTurn={handIsMyTurn}
-              gameType={gameType ?? undefined}
-              bluffActiveRank={gameState.bluffActiveRank}
-              playLabel={isInExchangePhase
-                ? `Return`
-                : isInDiscardPhase
-                  ? 'Discard'
-                  : undefined}
-              highlightCardIds={isInExchangePhase ? (presidentExchangeEntry?.receivedCardIds ?? []) : []}
-            />
-          ))}
+          {gameType === 'blackjack' && bjHasSplit ? (
+            <div className="flex gap-1 px-2 pb-1">
+              {myHandZones.map((zone, idx) => {
+                const isActiveHand = idx === (bjIsOnSplitHand ? 1 : 0)
+                return (
+                  <div key={zone.id} className="flex-1 min-w-0 flex flex-col">
+                    <div className="text-center text-[9px] uppercase tracking-wider font-semibold mb-0.5"
+                      style={{ color: isActiveHand && isMyTurn ? 'var(--accent)' : 'var(--text-dim)' }}>
+                      H{idx + 1}
+                    </div>
+                    <Hand
+                      zone={zone}
+                      onPlayCards={handlePlayCards}
+                      targetZones={[]}
+                      isMyTurn={false}
+                      gameType={gameType ?? undefined}
+                      bluffActiveRank={undefined}
+                      playLabel={undefined}
+                      highlightCardIds={[]}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            myHandZones.map(zone => (
+              <Hand
+                key={zone.id}
+                zone={zone}
+                onPlayCards={isInExchangePhase
+                  ? (cardIds) => handleExchangeReturn(cardIds)
+                  : isInDiscardPhase
+                    ? (cardIds) => handleRunDiscard(cardIds)
+                    : handlePlayCards}
+                targetZones={playTargets}
+                isMyTurn={handIsMyTurn}
+                gameType={gameType ?? undefined}
+                bluffActiveRank={gameState.bluffActiveRank}
+                playLabel={isInExchangePhase
+                  ? `Return`
+                  : isInDiscardPhase
+                    ? 'Discard'
+                    : undefined}
+                highlightCardIds={isInExchangePhase ? (presidentExchangeEntry?.receivedCardIds ?? []) : []}
+              />
+            ))
+          )}
         </div>
 
         {/* Extra actions */}

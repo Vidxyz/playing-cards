@@ -223,7 +223,15 @@ export class RoomDO implements DurableObject {
       return
     }
 
-    // Not in an active game — already marked disconnected, nothing more to do
+    // In lobby: remove the player entirely so others see them leave immediately
+    if (gs.phase === 'lobby') {
+      gs.players = gs.players.filter(p => p.id !== playerId)
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
+
+    // Not in an active game — nothing more to do
     if (gs.phase !== 'playing' && gs.phase !== 'round-over') return
 
     // In an active game: pull the player out of the turn order
