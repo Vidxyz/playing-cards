@@ -196,11 +196,7 @@ Then run `pnpm dev:lan` in each app directory instead.
 ### Deploy the Worker (Cloudflare)
 
 ```bash
-# First deployment — creates the Durable Object migration
-pnpm --filter @playing-cards/worker deploy
-
-# Subsequent deployments
-pnpm --filter @playing-cards/worker deploy
+wrangler deploy
 ```
 
 Your worker URL will be printed on success, e.g. `https://playing-cards-worker.<your-subdomain>.workers.dev`
@@ -214,8 +210,7 @@ Durable Objects require a **paid Cloudflare Workers plan** (Workers Paid, $5/mo)
 #### Option A — Vercel CLI
 
 ```bash
-pnpm add -g vercel
-vercel --cwd apps/web
+vercel --prod
 ```
 
 Follow the prompts. On first deploy, set the environment variable:

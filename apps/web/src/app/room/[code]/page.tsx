@@ -106,7 +106,7 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
   if (gameState.phase === 'lobby') {
     return (
       <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-        <Lobby gameState={gameState} myPlayerId={session.playerId} send={send} />
+        <Lobby gameState={gameState} myPlayerId={session.playerId} send={send} onLeave={() => router.replace('/')} />
       </div>
     )
   }

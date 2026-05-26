@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
 import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal, GoFishTutorialModal } from './CambioTutorial'
+import { ThemeToggle } from './ThemeToggle'
 
 const GAMES: {
   type: GameType; label: string; desc: string; icon: string; min: number; max: number; comingSoon?: boolean
@@ -20,9 +21,10 @@ interface Props {
   gameState: GameState
   myPlayerId: string
   send: (event: ClientEvent) => void
+  onLeave: () => void
 }
 
-export function Lobby({ gameState, myPlayerId, send }: Props) {
+export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
   const [showCambioTutorial, setShowCambioTutorial] = useState(false)
   const [showBluffTutorial, setShowBluffTutorial] = useState(false)
   const [showEuchreTutorial, setShowEuchreTutorial] = useState(false)
@@ -30,6 +32,7 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
   const [showBlackjackTutorial, setShowBlackjackTutorial] = useState(false)
   const [showPokerTutorial, setShowPokerTutorial] = useState(false)
   const [showGoFishTutorial, setShowGoFishTutorial] = useState(false)
+  const [pendingKick, setPendingKick] = useState<{ id: string; name: string } | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
 
@@ -53,6 +56,37 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto" style={{ background: 'var(--bg)' }}>
+
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+        style={{ borderBottom: '1px solid var(--border)' }}>
+        {isHost ? (
+          <button
+            onClick={() => { send({ type: 'end_game' }); onLeave() }}
+            className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
+            style={{
+              background: 'rgba(229,62,62,0.12)',
+              color: '#fc8181',
+              border: '1px solid rgba(229,62,62,0.25)',
+            }}
+          >
+            End Room
+          </button>
+        ) : (
+          <button
+            onClick={onLeave}
+            className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
+            style={{
+              background: 'var(--surface-mid)',
+              color: 'var(--text-muted)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            Leave
+          </button>
+        )}
+        <ThemeToggle compact />
+      </div>
 
       {/* Room code hero */}
       <div className="flex flex-col items-center pt-10 pb-6 px-4">
@@ -110,7 +144,7 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
                 )}
                 {isHost && !player.isHost && (
                   <button
-                    onClick={() => send({ type: 'kick_player', playerId: player.id })}
+                    onClick={() => setPendingKick({ id: player.id, name: player.name })}
                     className="flex items-center justify-center rounded-full text-xs font-bold transition-all active:scale-90"
                     style={{
                       width: 22, height: 22,
@@ -502,6 +536,44 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
 
       {showGoFishTutorial && (
         <GoFishTutorialModal onClose={() => setShowGoFishTutorial(false)} />
+      )}
+
+      {pendingKick && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6" onClick={() => setPendingKick(null)}
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+          <div
+            className="w-full max-w-xs rounded-3xl p-6 flex flex-col gap-4"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center gap-2 text-center">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                <span style={{ fontSize: 22 }}>🚪</span>
+              </div>
+              <h3 className="font-bold text-base" style={{ color: 'var(--text)' }}>Remove player?</h3>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                <strong style={{ color: 'var(--text)' }}>{pendingKick.name}</strong> will be kicked from the room.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPendingKick(null)}
+                className="flex-1 py-2.5 rounded-2xl text-sm font-semibold transition-all active:scale-95"
+                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { send({ type: 'kick_player', playerId: pendingKick.id }); setPendingKick(null) }}
+                className="flex-1 py-2.5 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Action */}
