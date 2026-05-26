@@ -543,6 +543,89 @@ export function GoFishTutorialModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+export function RummyTutorialModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-3xl overflow-y-auto card-slide"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxHeight: '88vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 sticky top-0"
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>How to Play Rummy</h2>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Form melds — lowest deadwood when someone goes out wins!</p>
+          </div>
+          <button onClick={onClose} className="text-sm px-3 py-1 rounded-full"
+            style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 pb-8 pt-4 flex flex-col gap-5">
+
+          <TutSection icon="🎯" title="Goal">
+            <p>Be the first to <strong>go out</strong> by melding all your cards. Everyone else scores their unmelded deadwood (cards still in hand) — you want the lowest running total. Hit the bust threshold and you&apos;re eliminated. <strong>Last player standing wins.</strong></p>
+          </TutSection>
+
+          <TutSection icon="🃏" title="The Deal">
+            <p>With <strong>2 players</strong>, each gets <strong>10 cards</strong>. With <strong>3–6 players</strong>, each gets <strong>7 cards</strong>. One card is flipped face-up to start the discard pile. The rest form the draw pile.</p>
+          </TutSection>
+
+          <TutSection icon="🔄" title="On Your Turn">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="1 · Draw" desc="Take the top card from the draw pile, or take the top card from the discard pile. You must draw before doing anything else." />
+              <Row label="2 · (Optional) Meld" desc="Select 3 or more cards that form a valid set or run, then tap Lay Meld. You can also add a single card to one of your existing melds." />
+              <Row label="3 · Discard" desc="Tap one card in your hand, then tap Discard. Your turn ends. If your hand is now empty, you go out and the round ends!" />
+            </div>
+          </TutSection>
+
+          <TutSection icon="🧩" title="Melds">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Set (3 or 4 of a kind)" desc="Three or four cards of the same rank, any suits. Example: 7♠ 7♥ 7♦ — or with a joker: 7♠ 7♥ JKR." />
+              <Row label="Run (3+ consecutive, same suit)" desc="Three or more consecutive ranks all in the same suit. Example: 5♥ 6♥ 7♥ — or with a joker filling a gap: 5♥ JKR 7♥. Ace is always low (A–2–3 is valid; Q–K–A is not)." />
+            </div>
+            <p className="mt-2">Jokers are wildcards — they count as any card in a meld. They&apos;re worth <strong>25 pts</strong> of deadwood if caught in your hand!</p>
+          </TutSection>
+
+          <TutSection icon="📊" title="Scoring">
+            <p>When a player goes out, everyone else scores the cards <strong>still in their hand</strong> (unmelded deadwood):</p>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {[
+                { label: 'Joker', pts: '25 pts' },
+                { label: 'J / Q / K', pts: '10 pts' },
+                { label: 'A', pts: '1 pt' },
+                { label: '2 – 10', pts: 'Face value' },
+              ].map(row => (
+                <div key={row.label} className="flex justify-between items-center px-3 py-2 rounded-lg"
+                  style={{ background: 'var(--surface-mid)', border: '1px solid var(--border)' }}>
+                  <span className="text-xs font-bold" style={{ color: 'var(--text)' }}>{row.label}</span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>{row.pts}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2">Scores accumulate across rounds. The player who goes out scores <strong>0</strong> for that round.</p>
+          </TutSection>
+
+          <TutSection icon="💥" title="Bust &amp; Elimination">
+            <p>Once a player&apos;s <strong>total score reaches or exceeds the bust threshold</strong> (set by the host before the game), they are eliminated. The game continues until only one player remains — they win!</p>
+          </TutSection>
+
+          <TutSection icon="💡" title="Strategy Tips">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Keep an eye on discards" desc="Draw from the discard pile only if it completes a meld — otherwise you're giving opponents information about your hand." />
+              <Row label="Dump high-value cards" desc="Unmelded Jacks, Queens, Kings and Jokers are expensive if someone goes out. Discard them early if they don't fit your melds." />
+              <Row label="Go Rummy" desc="If you meld all your cards in one turn without any prior melds, you go out immediately — no discard needed." />
+            </div>
+          </TutSection>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TutSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (
     <div>

@@ -98,6 +98,10 @@ function makeInitialState(roomCode: string, hostId = ''): GameState {
     pokerWinners: null,
     goFishBooks: {},
     goFishLastAsk: null,
+    rummyMaxScore: 100,
+    rummyMelds: {},
+    rummyHasDrawn: false,
+    rummyBustedPlayerIds: [],
   }
 }
 
@@ -349,6 +353,20 @@ export class RoomDO implements DurableObject {
         }
         gs.drawPileCount = this.drawPile.length
       }
+    } else if (gs.gameType === 'rummy') {
+      // Return disconnected player's hand cards to draw pile and reshuffle
+      const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+      if (handZone && handZone.cards.length > 0) {
+        this.drawPile.push(...handZone.cards)
+        handZone.cards = []
+        for (let i = this.drawPile.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
+        }
+        gs.drawPileCount = this.drawPile.length
+      }
+      // Reset the draw-state if it was this player's turn
+      gs.rummyHasDrawn = false
     }
   }
 
@@ -580,6 +598,31 @@ export class RoomDO implements DurableObject {
       case 'poker_all_in':
         if (gs.gameType !== 'poker' || gs.currentTurnPlayerId !== playerId) return
         await this.handlePokerAllIn(gs, player)
+        return
+
+      case 'set_rummy_config':
+        if (!player.isHost) return
+        gs.rummyMaxScore = Math.max(10, event.maxScore)
+        break
+
+      case 'rummy_draw':
+        if (gs.gameType !== 'rummy' || gs.currentTurnPlayerId !== playerId) return
+        this.handleRummyDraw(gs, player, event.fromDiscard)
+        break
+
+      case 'rummy_lay_meld':
+        if (gs.gameType !== 'rummy' || gs.currentTurnPlayerId !== playerId) return
+        await this.handleRummyLayMeld(gs, player, event.cardIds)
+        return
+
+      case 'rummy_extend_meld':
+        if (gs.gameType !== 'rummy' || gs.currentTurnPlayerId !== playerId) return
+        await this.handleRummyExtendMeld(gs, player, event.cardId, event.meldIndex)
+        return
+
+      case 'rummy_discard':
+        if (gs.gameType !== 'rummy' || gs.currentTurnPlayerId !== playerId) return
+        await this.handleRummyDiscard(gs, player, event.cardId)
         return
 
       case 'gofish_ask':
@@ -1001,6 +1044,43 @@ export class RoomDO implements DurableObject {
       for (const p of gs.players) {
         this.goFishCheckBooks(gs, p.id)
       }
+      gs.roundNumber++
+      gs.phase = 'playing'
+      gs.lastAction = { type: 'deal', playerId: gs.hostId, timestamp: Date.now() }
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
+
+    // Rummy: init melds, clear busted players' hands, set active turn order
+    if (gs.gameType === 'rummy') {
+      gs.rummyMelds = {}
+      gs.rummyHasDrawn = false
+      for (const p of gs.players) {
+        gs.rummyMelds[p.id] = []
+        p.isFolded = false
+      }
+      // Clear cards from busted players' hands and return them to draw pile
+      for (const pid of gs.rummyBustedPlayerIds) {
+        const handZone = gs.zones.find(z => z.id === `hand-${pid}`)
+        if (handZone && handZone.cards.length > 0) {
+          this.drawPile.push(...handZone.cards)
+          handZone.cards = []
+        }
+      }
+      // Reshuffle returned cards back into draw pile
+      if (gs.rummyBustedPlayerIds.length > 0) {
+        for (let i = this.drawPile.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
+        }
+        gs.drawPileCount = this.drawPile.length
+      }
+      // Only non-busted players participate in turns
+      const activePlayers = gs.players.filter(p => !gs.rummyBustedPlayerIds.includes(p.id))
+      gs.turnOrder = activePlayers.map(p => p.id)
+      const randomIdx = Math.floor(Math.random() * gs.turnOrder.length)
+      gs.currentTurnPlayerId = gs.turnOrder[randomIdx]
       gs.roundNumber++
       gs.phase = 'playing'
       gs.lastAction = { type: 'deal', playerId: gs.hostId, timestamp: Date.now() }
@@ -1479,6 +1559,26 @@ export class RoomDO implements DurableObject {
       return
     }
 
+    // Rummy: bust check, then redeal
+    if (gs.gameType === 'rummy') {
+      for (const p of gs.players) {
+        if (p.totalScore >= gs.rummyMaxScore && !gs.rummyBustedPlayerIds.includes(p.id)) {
+          gs.rummyBustedPlayerIds.push(p.id)
+        }
+      }
+      const active = gs.players.filter(p => !gs.rummyBustedPlayerIds.includes(p.id))
+      if (active.length <= 1) {
+        gs.phase = 'game-over'
+        await this.saveState(gs)
+        await this.broadcastState(gs)
+        return
+      }
+      gs.rummyMelds = {}
+      gs.rummyHasDrawn = false
+      await this.handleDeal(gs)
+      return
+    }
+
     // Euchre: reset bidding state, check for game over (10 pts), then redeal
     if (gs.gameType === 'euchre') {
       gs.euchrePhase = null
@@ -1583,6 +1683,10 @@ export class RoomDO implements DurableObject {
     // Go Fish
     gs.goFishBooks = {}
     gs.goFishLastAsk = null
+    // Rummy
+    gs.rummyMelds = {}
+    gs.rummyHasDrawn = false
+    gs.rummyBustedPlayerIds = []
     // Players
     for (const p of gs.players) {
       p.isReady = false
@@ -2366,6 +2470,201 @@ export class RoomDO implements DurableObject {
   }
 
   // ── End Go Fish handlers ──────────────────────────────────────
+
+  // ── Rummy handlers ────────────────────────────────────────────
+
+  private handleRummyDraw(gs: GameState, player: Player, fromDiscard: boolean): void {
+    if (gs.rummyHasDrawn) return
+
+    const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+    if (!handZone) return
+
+    if (fromDiscard) {
+      const discardZone = gs.zones.find(z => z.id === 'discard')
+      if (!discardZone || discardZone.cards.length === 0) return
+      const card = discardZone.cards.pop()!
+      handZone.cards.push(card)
+      gs.rummyHasDrawn = true
+      gs.lastAction = { type: 'draw', playerId: player.id, fromZoneId: 'discard', toZoneId: `hand-${player.id}`, timestamp: Date.now() }
+    } else {
+      if (this.drawPile.length === 0) this.reshuffleRummyDiscard(gs)
+      if (this.drawPile.length === 0) {
+        // Both piles empty — allow hasDrawn so player can still discard
+        gs.rummyHasDrawn = true
+        return
+      }
+      const card = this.drawPile.shift()!
+      gs.drawPileCount = this.drawPile.length
+      handZone.cards.push(card)
+      gs.rummyHasDrawn = true
+      gs.lastAction = { type: 'draw', playerId: player.id, toZoneId: `hand-${player.id}`, timestamp: Date.now() }
+    }
+  }
+
+  private async handleRummyLayMeld(gs: GameState, player: Player, cardIds: string[]): Promise<void> {
+    if (!gs.rummyHasDrawn) return
+    if (cardIds.length < 3) return
+
+    const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+    if (!handZone) return
+
+    const meldCards: Card[] = []
+    for (const id of cardIds) {
+      const card = handZone.cards.find(c => c.id === id)
+      if (!card) return
+      meldCards.push(card)
+    }
+
+    if (!this.isValidRummyMeld(meldCards)) return
+
+    for (const id of cardIds) {
+      const idx = handZone.cards.findIndex(c => c.id === id)
+      if (idx !== -1) handZone.cards.splice(idx, 1)
+    }
+
+    if (!gs.rummyMelds[player.id]) gs.rummyMelds[player.id] = []
+    gs.rummyMelds[player.id].push(meldCards)
+
+    gs.lastAction = { type: 'play', playerId: player.id, cardIds, timestamp: Date.now() }
+
+    if (handZone.cards.length === 0) {
+      await this.endRummyRound(gs, player.id)
+      return
+    }
+
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+  }
+
+  private async handleRummyExtendMeld(gs: GameState, player: Player, cardId: string, meldIndex: number): Promise<void> {
+    if (!gs.rummyHasDrawn) return
+
+    const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+    if (!handZone) return
+
+    const myMelds = gs.rummyMelds[player.id]
+    if (!myMelds || meldIndex < 0 || meldIndex >= myMelds.length) return
+
+    const card = handZone.cards.find(c => c.id === cardId)
+    if (!card) return
+
+    const extendedMeld = [...myMelds[meldIndex], card]
+    if (!this.isValidRummyMeld(extendedMeld)) return
+
+    const idx = handZone.cards.findIndex(c => c.id === cardId)
+    if (idx !== -1) handZone.cards.splice(idx, 1)
+    myMelds[meldIndex] = extendedMeld
+
+    gs.lastAction = { type: 'play', playerId: player.id, cardIds: [cardId], timestamp: Date.now() }
+
+    if (handZone.cards.length === 0) {
+      await this.endRummyRound(gs, player.id)
+      return
+    }
+
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+  }
+
+  private async handleRummyDiscard(gs: GameState, player: Player, cardId: string): Promise<void> {
+    if (!gs.rummyHasDrawn) return
+
+    const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+    if (!handZone) return
+
+    const idx = handZone.cards.findIndex(c => c.id === cardId)
+    if (idx === -1) return
+
+    const [card] = handZone.cards.splice(idx, 1)
+    const discardZone = gs.zones.find(z => z.id === 'discard')
+    if (discardZone) discardZone.cards.push(card)
+
+    gs.rummyHasDrawn = false
+    gs.lastAction = { type: 'play', playerId: player.id, cardIds: [cardId], toZoneId: 'discard', timestamp: Date.now() }
+
+    if (handZone.cards.length === 0) {
+      await this.endRummyRound(gs, player.id)
+      return
+    }
+
+    this.advanceTurn(gs)
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+  }
+
+  private async endRummyRound(gs: GameState, winnerPlayerId: string): Promise<void> {
+    for (const p of gs.players) {
+      if (p.id === winnerPlayerId) {
+        p.roundScore = 0
+        continue
+      }
+      const handZone = gs.zones.find(z => z.id === `hand-${p.id}`)
+      p.roundScore = (handZone?.cards ?? []).reduce((sum, c) => sum + this.rummyCardScore(c), 0)
+    }
+    gs.phase = 'round-over'
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+  }
+
+  private rummyCardScore(card: Card): number {
+    if (card.rank === 'JKR') return 25
+    if (['J', 'Q', 'K'].includes(card.rank)) return 10
+    if (card.rank === 'A') return 1
+    return Number(card.rank)
+  }
+
+  private isValidRummyMeld(cards: Card[]): boolean {
+    if (cards.length < 3) return false
+
+    const RANK_ORDER = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+    const jokers = cards.filter(c => c.rank === 'JKR')
+    const nonJokers = cards.filter(c => c.rank !== 'JKR')
+
+    if (nonJokers.length === 0) return false
+
+    // Set: all non-jokers same rank, total ≤ 4 (one per suit)
+    const firstRank = nonJokers[0].rank
+    if (nonJokers.every(c => c.rank === firstRank)) {
+      return cards.length <= 4
+    }
+
+    // Run: all non-jokers same suit, consecutive (jokers fill gaps or extend ends)
+    const firstSuit = nonJokers[0].suit
+    if (!nonJokers.every(c => c.suit === firstSuit)) return false
+
+    const rankIndices = nonJokers.map(c => RANK_ORDER.indexOf(c.rank))
+    if (rankIndices.some(i => i === -1)) return false
+
+    rankIndices.sort((a, b) => a - b)
+
+    // No duplicate ranks in a run
+    for (let i = 1; i < rankIndices.length; i++) {
+      if (rankIndices[i] === rankIndices[i - 1]) return false
+    }
+
+    // The non-joker span must fit within the total card count
+    // (jokers fill internal gaps and/or extend at either end)
+    const span = rankIndices[rankIndices.length - 1] - rankIndices[0] + 1
+    return span <= cards.length
+  }
+
+  private reshuffleRummyDiscard(gs: GameState): void {
+    const discardZone = gs.zones.find(z => z.id === 'discard')
+    if (!discardZone || discardZone.cards.length <= 1) return
+
+    const topCard = discardZone.cards[discardZone.cards.length - 1]
+    const toReshuffle = discardZone.cards.slice(0, -1)
+    discardZone.cards = [topCard]
+
+    this.drawPile.push(...toReshuffle)
+    for (let i = this.drawPile.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
+    }
+    gs.drawPileCount = this.drawPile.length
+  }
+
+  // ── End Rummy handlers ────────────────────────────────────────
 
   // ── Standard helpers ──────────────────────────────────────────
 

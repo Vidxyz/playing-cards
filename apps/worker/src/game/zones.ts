@@ -107,6 +107,22 @@ export const GAME_CONFIGS: Record<string, GameConfig> = {
     ],
   },
 
+  rummy: {
+    gameType: 'rummy',
+    label: 'Rummy',
+    description: 'Form melds of sets and runs. Go out by emptying your hand.',
+    minPlayers: 2,
+    maxPlayers: 6,
+    deckFilter: { jokerCount: 2 },
+    cardsPerPlayer: 7,
+    hasTeams: false,
+    hasTurnOrder: true,
+    zoneTemplates: [
+      { id: 'hand', name: 'Hand', visibility: 'owner-only', perPlayer: true, capacity: null },
+      { id: 'discard', name: 'Discard', visibility: 'face-up', perPlayer: false, capacity: null },
+    ],
+  },
+
   bluff: {
     gameType: 'bluff',
     label: 'Bluff',

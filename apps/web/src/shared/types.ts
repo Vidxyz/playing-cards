@@ -49,7 +49,7 @@ export interface Team {
 
 export type GamePhase = 'lobby' | 'dealing' | 'playing' | 'round-over' | 'game-over'
 
-export type GameType = 'president' | 'blackjack' | 'poker' | 'euchre' | 'cambio' | 'bluff' | 'go-fish'
+export type GameType = 'president' | 'blackjack' | 'poker' | 'euchre' | 'cambio' | 'bluff' | 'go-fish' | 'rummy'
 
 export interface BluffReveal {
   cards: Card[]           // actual card values — visible to all during resolution
@@ -144,6 +144,11 @@ export interface GameState {
   // Go Fish-specific
   goFishBooks: Record<string, string[]>
   goFishLastAsk: { askerId: string; targetId: string; rank: string; success: boolean; luckyFish: boolean; drewCard: boolean } | null
+  // Rummy-specific
+  rummyMaxScore: number
+  rummyMelds: Record<string, Card[][]>
+  rummyHasDrawn: boolean
+  rummyBustedPlayerIds: string[]
 }
 
 export interface GameAction {

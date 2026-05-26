@@ -46,6 +46,12 @@ export type ClientEvent =
   | { type: 'poker_all_in' }
   // Go Fish-specific
   | { type: 'gofish_ask'; targetPlayerId: string; rank: string }
+  // Rummy-specific
+  | { type: 'rummy_draw'; fromDiscard: boolean }
+  | { type: 'rummy_lay_meld'; cardIds: string[] }
+  | { type: 'rummy_extend_meld'; cardId: string; meldIndex: number }
+  | { type: 'rummy_discard'; cardId: string }
+  | { type: 'set_rummy_config'; maxScore: number }
   // Euchre-specific
   | { type: 'euchre_order_up'; goAlone?: boolean }
   | { type: 'euchre_pass' }

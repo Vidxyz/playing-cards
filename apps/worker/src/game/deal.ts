@@ -158,6 +158,24 @@ export function dealCards(
     return { zones: updatedZones, remaining: pile }
   }
 
+  if (config.gameType === 'rummy') {
+    const count = players.length === 2 ? 10 : 7
+    for (const player of players) {
+      const handZone = updatedZones.find(z => z.id === `hand-${player.id}`)
+      if (handZone) {
+        for (let i = 0; i < count && pile.length > 0; i++) {
+          handZone.cards.push(pile.shift()!)
+        }
+      }
+    }
+    // Flip one card face-up to start the discard pile
+    const discardZone = updatedZones.find(z => z.id === 'discard')
+    if (discardZone && pile.length > 0) {
+      discardZone.cards.push(pile.shift()!)
+    }
+    return { zones: updatedZones, remaining: pile }
+  }
+
   // president / bluff — deal all cards as evenly as possible
   const handZones = updatedZones.filter(z => z.ownerId !== null && z.id.startsWith('hand-'))
   let i = 0
