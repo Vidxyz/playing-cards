@@ -423,6 +423,17 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         />
       </div>
 
+      {/* Spectator notice */}
+      {gameState.pendingPlayers.some(p => p.id === myPlayerId) && (
+        <div className="flex items-center justify-center gap-2 px-4 py-2"
+          style={{ background: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.18)' }}>
+          <span style={{ fontSize: 14 }}>👁</span>
+          <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
+            Spectating — you'll be dealt in next round
+          </span>
+        </div>
+      )}
+
       {/* ── Table (shared zones + draw pile) ─────────── */}
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-3 overflow-y-auto">
 

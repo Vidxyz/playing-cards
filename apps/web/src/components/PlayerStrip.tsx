@@ -20,7 +20,8 @@ function getPokerBlinds(gs: GameState): { sbId: string | null; bbId: string | nu
 
 export function PlayerStrip({ gameState, myPlayerId }: Props) {
   const others = gameState.players.filter(p => p.id !== myPlayerId)
-  if (others.length === 0) return null
+  const pending = gameState.pendingPlayers ?? []
+  if (others.length === 0 && pending.length === 0) return null
 
   const { turnOrder, currentTurnPlayerId } = gameState
   const currentIdx = turnOrder.indexOf(currentTurnPlayerId ?? '')
@@ -137,8 +138,34 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
   }
 
   return (
-    <div className="flex gap-2 overflow-x-auto no-scrollbar px-3 py-1.5">
-      {others.map(renderPlayer)}
+    <div>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar px-3 py-1.5">
+        {others.map(renderPlayer)}
+        {pending.map(p => (
+          <div
+            key={p.id}
+            className="flex items-center gap-2 flex-shrink-0 rounded-2xl px-3 py-2"
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              opacity: 0.6,
+            }}
+          >
+            <div
+              className="flex items-center justify-center rounded-full text-xs font-bold flex-shrink-0"
+              style={{ width: 28, height: 28, background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              {p.name.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-semibold truncate max-w-[72px]" style={{ color: 'var(--text)' }}>
+                {p.name}
+              </span>
+              <span className="text-[10px]" style={{ color: 'var(--accent)' }}>next round</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

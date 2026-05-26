@@ -37,6 +37,7 @@ function makeInitialState(roomCode: string, hostId = ''): GameState {
     gameType: null,
     phase: 'lobby',
     players: [],
+    pendingPlayers: [],
     teams: [],
     zones: [],
     drawPileCount: 0,
@@ -185,6 +186,7 @@ export class RoomDO implements DurableObject {
     if (!gs) return
 
     const player = gs.players.find(p => p.id === playerId)
+      ?? gs.pendingPlayers.find(p => p.id === playerId)
     if (!player) return
 
     // Mark disconnected immediately so the UI reflects it, but don't destroy
@@ -218,8 +220,17 @@ export class RoomDO implements DurableObject {
     if (!gs) return
 
     const player = gs.players.find(p => p.id === playerId)
+      ?? gs.pendingPlayers.find(p => p.id === playerId)
     // If they reconnected in the meantime, nothing to do
     if (!player || player.isConnected) return
+
+    // Pending player left — just drop them from the queue, no game impact
+    if (gs.pendingPlayers.some(p => p.id === playerId)) {
+      gs.pendingPlayers = gs.pendingPlayers.filter(p => p.id !== playerId)
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
 
     // Host leaves → terminate the entire room
     if (player.isHost) {
@@ -741,12 +752,22 @@ export class RoomDO implements DurableObject {
       gs.hostId = playerId
     }
 
+    // Check if reconnecting (present in players or pendingPlayers)
     let player = gs.players.find(p => p.id === playerId)
+      ?? gs.pendingPlayers.find(p => p.id === playerId)
+
     if (!player) {
+      // Enforce capacity against active players only (pending don't count)
+      const config = gs.gameType ? getConfig(gs.gameType) : null
+      if (config && gs.players.length >= config.maxPlayers) {
+        this.sendTo(ws, { type: 'kicked', reason: `This room is full (max ${config.maxPlayers} players for ${config.label}).` })
+        return
+      }
+
       player = {
         id: playerId,
         name,
-        seatIndex: gs.players.length,
+        seatIndex: gs.players.length + gs.pendingPlayers.length,
         teamId: null,
         isHost: gs.hostId === playerId,
         isConnected: true,
@@ -756,7 +777,13 @@ export class RoomDO implements DurableObject {
         roundScore: 0,
         totalScore: 0,
       }
-      gs.players.push(player)
+
+      if (gs.phase !== 'lobby') {
+        // Game in progress — hold in pending until next deal
+        gs.pendingPlayers.push(player)
+      } else {
+        gs.players.push(player)
+      }
     } else {
       player.isConnected = true
       player.disconnectedAt = undefined
@@ -777,6 +804,12 @@ export class RoomDO implements DurableObject {
 
     const config = getConfig(gs.gameType)
     if (!config) return
+
+    // Promote pending players into the active roster for this round
+    for (const p of gs.pendingPlayers) {
+      if (p.isConnected) gs.players.push(p)
+    }
+    gs.pendingPlayers = []
 
     // Permanently remove any player who left — they won't participate in this round
     gs.players = gs.players.filter(p => p.isConnected)
@@ -827,7 +860,7 @@ export class RoomDO implements DurableObject {
         for (const p of gs.players) gs.blackjackChips[p.id] = gs.blackjackStartingChips
       } else {
         for (const p of gs.players) {
-          if (!(p.id in gs.blackjackChips)) gs.blackjackChips[p.id] = 0
+          if (!(p.id in gs.blackjackChips)) gs.blackjackChips[p.id] = gs.blackjackStartingChips
         }
       }
       // Reset per-hand state
@@ -942,9 +975,9 @@ export class RoomDO implements DurableObject {
       if (Object.keys(gs.pokerChips).length === 0) {
         for (const p of gs.players) gs.pokerChips[p.id] = gs.pokerStartingChips
       } else {
-        // Ensure any new player has chips (joined mid-game → 0)
+        // New players joining next round get starting chips
         for (const p of gs.players) {
-          if (!(p.id in gs.pokerChips)) gs.pokerChips[p.id] = 0
+          if (!(p.id in gs.pokerChips)) gs.pokerChips[p.id] = gs.pokerStartingChips
         }
       }
 

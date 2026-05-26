@@ -67,6 +67,7 @@ export interface GameState {
   gameType: GameType | null
   phase: GamePhase
   players: Player[]
+  pendingPlayers: Player[]
   teams: Team[]
   zones: Zone[]
   drawPileCount: number
