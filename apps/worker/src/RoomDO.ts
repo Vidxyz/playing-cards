@@ -2243,18 +2243,24 @@ export class RoomDO implements DurableObject {
           askerHand.cards.push(card)
         }
       }
-    } else {
-      // Go Fish: draw from pile
-      if (this.drawPile.length > 0) {
-        const drawn = this.drawPile.shift()!
-        gs.drawPileCount = this.drawPile.length
-        askerHand.cards.push(drawn)
-        luckyFish = drawn.rank === rank
-        drewCard = true
-      }
-    }
+      gs.goFishLastAsk = { askerId: asker.id, targetId: targetPlayerId, rank, success: true, luckyFish: false, drewCard: false }
+    } else if (this.drawPile.length > 0) {
+      // Go Fish with cards remaining: notify all players first, then draw after a pause
+      gs.goFishLastAsk = { askerId: asker.id, targetId: targetPlayerId, rank, success: false, luckyFish: false, drewCard: false }
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      await new Promise<void>(r => setTimeout(r, 1500))
 
-    gs.goFishLastAsk = { askerId: asker.id, targetId: targetPlayerId, rank, success, luckyFish, drewCard }
+      const drawn = this.drawPile.shift()!
+      gs.drawPileCount = this.drawPile.length
+      askerHand.cards.push(drawn)
+      luckyFish = drawn.rank === rank
+      drewCard = true
+      gs.goFishLastAsk = { askerId: asker.id, targetId: targetPlayerId, rank, success: false, luckyFish, drewCard: true }
+    } else {
+      // Pile is empty — no draw
+      gs.goFishLastAsk = { askerId: asker.id, targetId: targetPlayerId, rank, success: false, luckyFish: false, drewCard: false }
+    }
 
     // Check if asker formed any books after receiving cards
     this.goFishCheckBooks(gs, asker.id)

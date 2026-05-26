@@ -99,6 +99,7 @@ export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
           lastAsk={lastAsk}
           players={gameState.players}
           myPlayerId={myPlayerId}
+          drawPileCount={gameState.drawPileCount}
         />
       )}
 
@@ -426,15 +427,20 @@ function LastAskBanner({
   lastAsk,
   players,
   myPlayerId,
+  drawPileCount,
 }: {
   lastAsk: NonNullable<GameState['goFishLastAsk']>
   players: GameState['players']
   myPlayerId: string
+  drawPileCount: number
 }) {
   const asker = players.find(p => p.id === lastAsk.askerId)
   const target = players.find(p => p.id === lastAsk.targetId)
   const iMadeAsk = lastAsk.askerId === myPlayerId
   const iWasAsked = lastAsk.targetId === myPlayerId
+
+  // drewCard=false + !success + pile>0 means the draw is in progress (server-side delay)
+  const drawPending = !lastAsk.success && !lastAsk.luckyFish && !lastAsk.drewCard && drawPileCount > 0
 
   let icon: string
   let lines: string[]
@@ -464,11 +470,26 @@ function LastAskBanner({
     bg = 'rgba(74,222,128,0.08)'
     borderColor = 'rgba(74,222,128,0.3)'
     wrapperClass += ' success-flash'
-  } else if (lastAsk.drewCard) {
+  } else if (drawPending) {
+    // Draw is about to happen — server is pausing before adding the card
     icon = '🐟'
     lines = iMadeAsk
-      ? [`Go fish! ${target?.name} had no ${lastAsk.rank}s`, 'Drew a card from the pile — turn passes.']
-      : [`${asker?.name} asked for ${lastAsk.rank}s — go fish!`, `${iWasAsked ? 'You had none.' : ''} Drew a card from the pile.`.trim()]
+      ? [`Go fish! ${target?.name} had no ${lastAsk.rank}s`, 'Proceeding to draw a card from the pile…']
+      : iWasAsked
+        ? [`${asker?.name} asked for ${lastAsk.rank}s — go fish!`, 'Proceeding to draw a card from the pile…']
+        : [`${asker?.name} asked for ${lastAsk.rank}s — go fish!`, 'Proceeding to draw a card from the pile…']
+    color = 'var(--text-muted)'
+    bg = 'var(--surface-hi)'
+    borderColor = 'var(--border-hi)'
+    iconClass = 'fish-wiggle'
+  } else if (lastAsk.drewCard) {
+    // Draw completed
+    icon = '🐟'
+    lines = iMadeAsk
+      ? [`Go fish! ${target?.name} had no ${lastAsk.rank}s`, 'Drew a card — turn passes.']
+      : iWasAsked
+        ? [`${asker?.name} took no cards — go fish!`, 'They drew from the pile.']
+        : [`${asker?.name} asked for ${lastAsk.rank}s — go fish!`, 'Drew a card from the pile.']
     color = 'var(--text-muted)'
     bg = 'var(--surface-hi)'
     borderColor = 'var(--border-hi)'
