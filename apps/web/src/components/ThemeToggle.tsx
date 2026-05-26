@@ -47,7 +47,7 @@ export function ThemeToggle({ compact: _compact }: { compact?: boolean }) {
           className="fade-in"
           style={{
             position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-            width: 200,
+            width: 218,
             background: 'var(--surface)',
             border: '1px solid var(--border-hi)',
             borderRadius: 16,
@@ -89,7 +89,7 @@ export function ThemeToggle({ compact: _compact }: { compact?: boolean }) {
             <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dim)', fontWeight: 600 }}>
               Accent Color
             </span>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
               {ACCENT_OPTIONS.map(opt => {
                 const active = accent === opt.key
                 return (

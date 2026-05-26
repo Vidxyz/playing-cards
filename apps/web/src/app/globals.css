@@ -28,24 +28,24 @@
 
 /* ── Light theme ──────────────────────────────────────────── */
 [data-theme="light"] {
-  --bg:            #eef0f6;
-  --surface:       #ffffff;
-  --surface-mid:   #e4e7f0;
-  --surface-hi:    #d8dce8;
-  --border:        rgba(0,0,0,0.10);
-  --border-hi:     rgba(0,0,0,0.18);
+  --bg:            #f2ede6;
+  --surface:       #faf7f3;
+  --surface-mid:   #e8e1d8;
+  --surface-hi:    #d9d1c6;
+  --border:        rgba(0,0,0,0.09);
+  --border-hi:     rgba(0,0,0,0.17);
 
-  --text:          #111827;
-  --text-muted:    rgba(17,24,39,0.55);
-  --text-dim:      rgba(17,24,39,0.32);
+  --text:          #1a1410;
+  --text-muted:    rgba(26,20,16,0.58);
+  --text-dim:      rgba(26,20,16,0.34);
 
   --accent:        #d97706;
-  --accent-dim:    rgba(217,119,6,0.12);
+  --accent-dim:    rgba(217,119,6,0.14);
   --accent-hi:     #f59e0b;
 
   --red:           #dc2626;
-  --card-shadow:   0 3px 12px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.10);
-  --card-border:   1px solid rgba(0,0,0,0.12);
+  --card-shadow:   0 3px 12px rgba(0,0,0,0.13), 0 1px 3px rgba(0,0,0,0.08);
+  --card-border:   1px solid rgba(0,0,0,0.11);
 }
 
 /* ── Accent: Blue ─────────────────────────────────────────── */
@@ -94,6 +94,54 @@
   --accent:     #e11d48;
   --accent-dim: rgba(225,29,72,0.12);
   --accent-hi:  #f43f5e;
+}
+
+/* ── Accent: Cyan ─────────────────────────────────────────── */
+[data-accent="cyan"] {
+  --accent:     #22d3ee;
+  --accent-dim: rgba(34,211,238,0.15);
+  --accent-hi:  #67e8f9;
+}
+[data-accent="cyan"][data-theme="light"] {
+  --accent:     #0891b2;
+  --accent-dim: rgba(8,145,178,0.13);
+  --accent-hi:  #06b6d4;
+}
+
+/* ── Accent: Orange ───────────────────────────────────────── */
+[data-accent="orange"] {
+  --accent:     #f97316;
+  --accent-dim: rgba(249,115,22,0.15);
+  --accent-hi:  #fb923c;
+}
+[data-accent="orange"][data-theme="light"] {
+  --accent:     #ea580c;
+  --accent-dim: rgba(234,88,12,0.13);
+  --accent-hi:  #f97316;
+}
+
+/* ── Accent: Fuchsia ──────────────────────────────────────── */
+[data-accent="fuchsia"] {
+  --accent:     #e879f9;
+  --accent-dim: rgba(232,121,249,0.15);
+  --accent-hi:  #f0abfc;
+}
+[data-accent="fuchsia"][data-theme="light"] {
+  --accent:     #c026d3;
+  --accent-dim: rgba(192,38,211,0.13);
+  --accent-hi:  #d946ef;
+}
+
+/* ── Accent: Teal ─────────────────────────────────────────── */
+[data-accent="teal"] {
+  --accent:     #2dd4bf;
+  --accent-dim: rgba(45,212,191,0.15);
+  --accent-hi:  #5eead4;
+}
+[data-accent="teal"][data-theme="light"] {
+  --accent:     #0d9488;
+  --accent-dim: rgba(13,148,136,0.13);
+  --accent-hi:  #14b8a6;
 }
 
 [data-theme="light"] .glass {

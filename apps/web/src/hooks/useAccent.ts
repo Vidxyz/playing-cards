@@ -2,14 +2,18 @@
 
 import { useEffect, useState } from 'react'
 
-export type AccentKey = 'amber' | 'blue' | 'green' | 'purple' | 'rose'
+export type AccentKey = 'amber' | 'blue' | 'green' | 'purple' | 'rose' | 'cyan' | 'orange' | 'fuchsia' | 'teal'
 
 export const ACCENT_OPTIONS: { key: AccentKey; label: string; swatch: string }[] = [
-  { key: 'amber',  label: 'Amber',  swatch: '#f59e0b' },
-  { key: 'blue',   label: 'Blue',   swatch: '#3b82f6' },
-  { key: 'green',  label: 'Green',  swatch: '#22c55e' },
-  { key: 'purple', label: 'Purple', swatch: '#a855f7' },
-  { key: 'rose',   label: 'Rose',   swatch: '#f43f5e' },
+  { key: 'amber',   label: 'Amber',   swatch: '#f59e0b' },
+  { key: 'orange',  label: 'Orange',  swatch: '#f97316' },
+  { key: 'rose',    label: 'Rose',    swatch: '#f43f5e' },
+  { key: 'fuchsia', label: 'Fuchsia', swatch: '#e879f9' },
+  { key: 'purple',  label: 'Purple',  swatch: '#a855f7' },
+  { key: 'blue',    label: 'Blue',    swatch: '#3b82f6' },
+  { key: 'cyan',    label: 'Cyan',    swatch: '#22d3ee' },
+  { key: 'teal',    label: 'Teal',    swatch: '#2dd4bf' },
+  { key: 'green',   label: 'Green',   swatch: '#22c55e' },
 ]
 
 function applyAccent(key: AccentKey) {

@@ -134,6 +134,16 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const isHost = me?.isHost ?? false
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId
   const gameType = gameState.gameType
+
+  const pokerBlinds = (() => {
+    if (gameType !== 'poker' || !gameState.pokerDealerPlayerId) return { sbId: null as string | null, bbId: null as string | null }
+    const sorted = [...gameState.players].sort((a, b) => a.seatIndex - b.seatIndex)
+    const di = sorted.findIndex(p => p.id === gameState.pokerDealerPlayerId)
+    if (di === -1 || sorted.length < 2) return { sbId: null, bbId: null }
+    const n = sorted.length
+    if (n === 2) return { sbId: sorted[di].id, bbId: sorted[(di + 1) % n].id }
+    return { sbId: sorted[(di + 1) % n].id, bbId: sorted[(di + 2) % n].id }
+  })()
   const myHasPassed = gameState.bluffPassedPlayerIds.includes(myPlayerId)
   const presidentHasPassed = gameState.presidentPassedIds.includes(myPlayerId)
   const presidentHasFinished = gameState.presidentFinishOrder.includes(myPlayerId)
@@ -357,9 +367,20 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           </div>
         </div>
 
-        {/* Row 2: player identity */}
+        {/* Row 2: player identity + centered game name */}
         {me && (
-          <div className="flex items-center gap-2 px-4 pt-0.5 pb-1.5">
+          <div className="relative flex items-center gap-2 px-4 pt-0.5 pb-1.5">
+            {/* Absolutely centered game name */}
+            {gameType && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="font-bold text-[14px] leading-tight" style={{ color: 'var(--text-muted)' }}>
+                  {GAME_LABEL[gameType] ?? gameType}
+                </span>
+                <span className="text-[10px] leading-tight" style={{ color: 'var(--text-dim)' }}>
+                  Round {gameState.roundNumber}
+                </span>
+              </div>
+            )}
             <div
               className="flex items-center justify-center rounded-full text-[9px] font-black flex-shrink-0"
               style={{ width: 22, height: 22, background: 'var(--accent)', color: '#000' }}
@@ -375,6 +396,18 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                 host
               </span>
             )}
+            {pokerBlinds.sbId === myPlayerId && (
+              <span className="text-[9px] font-black px-1 py-0.5 rounded"
+                style={{ background: 'rgba(59,130,246,0.2)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.35)' }}>
+                small blind
+              </span>
+            )}
+            {pokerBlinds.bbId === myPlayerId && (
+              <span className="text-[9px] font-black px-1 py-0.5 rounded"
+                style={{ background: 'rgba(168,85,247,0.2)', color: '#c084fc', border: '1px solid rgba(168,85,247,0.35)' }}>
+                big blind
+              </span>
+            )}
             {gameState.trumpSuit && (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-auto"
                 style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
@@ -387,7 +420,6 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         <PlayerStrip
           gameState={gameState}
           myPlayerId={myPlayerId}
-          centerLabel={gameType ? (GAME_LABEL[gameType] ?? gameType) : undefined}
         />
       </div>
 

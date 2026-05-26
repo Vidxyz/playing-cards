@@ -6,12 +6,21 @@ import { DisconnectTimer } from './DisconnectTimer'
 interface Props {
   gameState: GameState
   myPlayerId: string
-  centerLabel?: string
 }
 
-export function PlayerStrip({ gameState, myPlayerId, centerLabel }: Props) {
+function getPokerBlinds(gs: GameState): { sbId: string | null; bbId: string | null } {
+  if (gs.gameType !== 'poker' || !gs.pokerDealerPlayerId) return { sbId: null, bbId: null }
+  const sorted = [...gs.players].sort((a, b) => a.seatIndex - b.seatIndex)
+  const dealerIdx = sorted.findIndex(p => p.id === gs.pokerDealerPlayerId)
+  if (dealerIdx === -1 || sorted.length < 2) return { sbId: null, bbId: null }
+  const n = sorted.length
+  if (n === 2) return { sbId: sorted[dealerIdx].id, bbId: sorted[(dealerIdx + 1) % n].id }
+  return { sbId: sorted[(dealerIdx + 1) % n].id, bbId: sorted[(dealerIdx + 2) % n].id }
+}
+
+export function PlayerStrip({ gameState, myPlayerId }: Props) {
   const others = gameState.players.filter(p => p.id !== myPlayerId)
-  if (others.length === 0 && !centerLabel) return null
+  if (others.length === 0) return null
 
   const { turnOrder, currentTurnPlayerId } = gameState
   const currentIdx = turnOrder.indexOf(currentTurnPlayerId ?? '')
@@ -19,10 +28,14 @@ export function PlayerStrip({ gameState, myPlayerId, centerLabel }: Props) {
     ? turnOrder[(currentIdx + 1) % turnOrder.length]
     : null
 
+  const { sbId, bbId } = getPokerBlinds(gameState)
+
   const renderPlayer = (player: typeof others[0]) => {
     const isCurrentTurn = currentTurnPlayerId === player.id
     const isNextTurn = nextPlayerId === player.id && !isCurrentTurn
     const hasPassed = gameState.bluffPassedPlayerIds.includes(player.id)
+    const isSB = player.id === sbId
+    const isBB = player.id === bbId
     const cardCount = gameState.zones
       .filter(z => z.ownerId === player.id)
       .reduce((s, z) => s + z.cards.length, 0)
@@ -57,6 +70,18 @@ export function PlayerStrip({ gameState, myPlayerId, centerLabel }: Props) {
             {player.isHost && (
               <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>
                 HOST
+              </span>
+            )}
+            {isSB && (
+              <span className="text-[9px] font-black px-1 py-0.5 rounded"
+                style={{ background: 'rgba(59,130,246,0.2)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.35)' }}>
+                small blind
+              </span>
+            )}
+            {isBB && (
+              <span className="text-[9px] font-black px-1 py-0.5 rounded"
+                style={{ background: 'rgba(168,85,247,0.2)', color: '#c084fc', border: '1px solid rgba(168,85,247,0.35)' }}>
+                big blind
               </span>
             )}
           </div>
@@ -112,25 +137,8 @@ export function PlayerStrip({ gameState, myPlayerId, centerLabel }: Props) {
   }
 
   return (
-    <div className="relative">
-      <div className="flex gap-2 overflow-x-auto no-scrollbar px-3 py-1.5">
-        {others.map(renderPlayer)}
-      </div>
-      {centerLabel && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div
-            className="flex flex-col items-center px-2"
-            style={{ background: 'var(--bg)' }}
-          >
-            <span className="font-bold text-[15px] leading-tight" style={{ color: 'var(--text-muted)' }}>
-              {centerLabel}
-            </span>
-            <span className="text-[10px] leading-tight" style={{ color: 'var(--text-dim)' }}>
-              Round {gameState.roundNumber}
-            </span>
-          </div>
-        </div>
-      )}
+    <div className="flex gap-2 overflow-x-auto no-scrollbar px-3 py-1.5">
+      {others.map(renderPlayer)}
     </div>
   )
 }
