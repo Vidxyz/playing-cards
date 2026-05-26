@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
 import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal, GoFishTutorialModal } from './CambioTutorial'
 import { ThemeToggle } from './ThemeToggle'
+import { DisconnectTimer } from './DisconnectTimer'
 
 const GAMES: {
   type: GameType; label: string; desc: string; icon: string; min: number; max: number; comingSoon?: boolean
@@ -149,7 +150,9 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
               </div>
               <div className="flex items-center gap-2">
                 {!player.isConnected && (
-                  <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>offline</span>
+                  player.disconnectedAt
+                    ? <DisconnectTimer disconnectedAt={player.disconnectedAt} />
+                    : <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>offline</span>
                 )}
                 {player.isReady && !player.isHost && (
                   <span className="text-green-400 text-sm font-bold">✓</span>

@@ -183,17 +183,18 @@ export class RoomDO implements DurableObject {
     // Mark disconnected immediately so the UI reflects it, but don't destroy
     // game state yet — give the player a grace window to reconnect.
     player.isConnected = false
+    player.disconnectedAt = Date.now()
     await this.saveState(gs)
     await this.broadcastState(gs)
 
     // Cancel any existing timer for this player (e.g. rapid reconnect-disconnect cycle)
     this.cancelLeaveTimer(playerId)
 
-    // After 20 s with no reconnect, treat the disconnect as a permanent leave.
+    // After 15 s with no reconnect, treat the disconnect as a permanent leave.
     const timer = setTimeout(() => {
       this.leaveTimers.delete(playerId)
       this.applyPlayerLeave(playerId).catch(() => {/* DO may have been torn down */})
-    }, 20_000)
+    }, 15_000)
     this.leaveTimers.set(playerId, timer)
   }
 
@@ -696,6 +697,7 @@ export class RoomDO implements DurableObject {
       gs.players.push(player)
     } else {
       player.isConnected = true
+      player.disconnectedAt = undefined
       player.name = name
     }
 

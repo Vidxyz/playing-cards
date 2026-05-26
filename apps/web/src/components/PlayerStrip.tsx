@@ -1,6 +1,7 @@
 'use client'
 
 import type { GameState } from '@playing-cards/shared'
+import { DisconnectTimer } from './DisconnectTimer'
 
 interface Props {
   gameState: GameState
@@ -33,8 +34,8 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
             className="flex items-center gap-2 flex-shrink-0 rounded-2xl px-3 py-2 transition-all"
             style={{
               background: isCurrentTurn ? 'var(--surface-hi)' : 'var(--surface)',
-              border: '1px solid ' + (isCurrentTurn ? 'var(--accent)' : isNextTurn ? 'var(--border-hi)' : 'var(--border)'),
-              opacity: !player.isConnected || player.isFolded || hasPassed ? 0.4 : 1,
+              border: '1px solid ' + (isCurrentTurn ? 'var(--accent)' : isNextTurn ? 'var(--border-hi)' : !player.isConnected ? 'rgba(239,68,68,0.3)' : 'var(--border)'),
+              opacity: player.isFolded || hasPassed ? 0.4 : !player.isConnected ? 0.65 : 1,
             }}
           >
             <div
@@ -86,20 +87,26 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
               )}
             </div>
 
-            {isCurrentTurn && !hasPassed && (
-              <span className="text-xs" style={{ color: 'var(--accent)' }}>▶</span>
-            )}
-            {isNextTurn && !hasPassed && (
-              <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-                next
-              </span>
-            )}
-            {hasPassed && (
-              <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-                style={{ background: 'rgba(239,68,68,0.1)', color: '#fc8181', border: '1px solid rgba(239,68,68,0.25)' }}>
-                passed
-              </span>
+            {!player.isConnected && player.disconnectedAt ? (
+              <DisconnectTimer disconnectedAt={player.disconnectedAt} />
+            ) : (
+              <>
+                {isCurrentTurn && !hasPassed && (
+                  <span className="text-xs" style={{ color: 'var(--accent)' }}>▶</span>
+                )}
+                {isNextTurn && !hasPassed && (
+                  <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                    style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                    next
+                  </span>
+                )}
+                {hasPassed && (
+                  <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                    style={{ background: 'rgba(239,68,68,0.1)', color: '#fc8181', border: '1px solid rgba(239,68,68,0.25)' }}>
+                    passed
+                  </span>
+                )}
+              </>
             )}
           </div>
         )

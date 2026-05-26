@@ -31,6 +31,7 @@ export interface Player {
   teamId: string | null
   isHost: boolean
   isConnected: boolean
+  disconnectedAt?: number
   isReady: boolean
   isFolded: boolean
   trickCount: number
