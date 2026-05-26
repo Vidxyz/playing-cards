@@ -142,9 +142,10 @@ interface Props {
   bluffActiveRank?: string | null
   playLabel?: string
   highlightCardIds?: string[]
+  playableCardIds?: string[]
 }
 
-export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluffActiveRank, playLabel, highlightCardIds }: Props) {
+export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluffActiveRank, playLabel, highlightCardIds, playableCardIds }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [targetZoneId, setTargetZoneId] = useState<string>(targetZones[0]?.id || '')
   const [arrangeMode, setArrangeMode] = useState(false)
@@ -292,6 +293,7 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
           {orderedCards.map((card, i) => {
             const isSelected = arrangeMode ? movingId === card.id : selected.has(card.id)
             const isHighlighted = highlightCardIds?.includes(card.id) ?? false
+            const isPlayable = playableCardIds?.includes(card.id) ?? false
             return (
               <div
                 key={card.id}
@@ -313,6 +315,15 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
                   }}>
                     NEW
                   </div>
+                )}
+                {isPlayable && !isSelected && (
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    borderRadius: 'var(--radius-card)',
+                    boxShadow: '0 0 10px 2px rgba(74,222,128,0.55)',
+                    border: '1.5px solid rgba(74,222,128,0.7)',
+                    zIndex: 9, pointerEvents: 'none',
+                  }} />
                 )}
                 <Card
                   card={card}

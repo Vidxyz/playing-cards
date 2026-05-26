@@ -123,6 +123,22 @@ export const GAME_CONFIGS: Record<string, GameConfig> = {
     ],
   },
 
+  'crazy-eights': {
+    gameType: 'crazy-eights',
+    label: 'Crazy Eights',
+    description: 'Match suit or rank. Play 8s wild to change suit. Empty your hand first.',
+    minPlayers: 2,
+    maxPlayers: 6,
+    deckFilter: {},
+    cardsPerPlayer: 5,
+    hasTeams: false,
+    hasTurnOrder: true,
+    zoneTemplates: [
+      { id: 'hand', name: 'Hand', visibility: 'owner-only', perPlayer: true, capacity: null },
+      { id: 'discard', name: 'Discard', visibility: 'face-up', perPlayer: false, capacity: null },
+    ],
+  },
+
   bluff: {
     gameType: 'bluff',
     label: 'Bluff',

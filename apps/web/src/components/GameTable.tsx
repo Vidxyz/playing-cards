@@ -9,13 +9,14 @@ import { Zone as ZoneView } from './Zone'
 import { PlayerStrip } from './PlayerStrip'
 import { ScoreBoard } from './ScoreBoard'
 import { Card } from './Card'
-import { CambioTutorialModal, BluffTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal, GoFishTutorialModal, RummyTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal, GoFishTutorialModal, RummyTutorialModal, CrazyEightsTutorialModal } from './CambioTutorial'
 import { EuchreBoard } from './EuchreBoard'
 import { PresidentBoard } from './PresidentBoard'
 import { PokerBoard } from './PokerBoard'
 import { BlackjackBoard, bjHandValue, BJ_RESULT_LABEL, BJ_RESULT_COLOR, ChipSvg, ChipStack } from './BlackjackBoard'
 import { GoFishBoard } from './GoFishBoard'
 import { RummyBoard } from './RummyBoard'
+import { CrazyEightsBoard } from './CrazyEightsBoard'
 import { ThemeToggle } from './ThemeToggle'
 import { Toast } from './Toast'
 
@@ -87,9 +88,13 @@ const GAME_LABEL: Record<string, string> = {
   bluff: 'Bluff',
   'go-fish': 'Go Fish',
   rummy: 'Rummy',
+  'crazy-eights': 'Crazy 8s',
 }
+const SUIT_OPTS_C8: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs']
+const SUIT_LABEL_C8: Record<string, string> = { spades: '♠ Spades', hearts: '♥ Hearts', diamonds: '♦ Diamonds', clubs: '♣ Clubs' }
+const SUIT_COLOR_C8: Record<string, string> = { spades: 'var(--text)', clubs: 'var(--text)', hearts: '#f87171', diamonds: '#f87171' }
 // Games that manage their own round-over results screen
-const GAMES_WITH_OWN_RESULTS = new Set(['president', 'poker', 'blackjack', 'go-fish', 'rummy'])
+const GAMES_WITH_OWN_RESULTS = new Set(['president', 'poker', 'blackjack', 'go-fish', 'rummy', 'crazy-eights'])
 
 export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults, initialPeeks, clearInitialPeeks, onLeave, errorMsg }: Props) {
   const [showScores, setShowScores] = useState(false)
@@ -100,6 +105,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const [showDoubleDeckToast, setShowDoubleDeckToast] = useState(false)
   const [exchangeBannerReady, setExchangeBannerReady] = useState(false)
   const [rummyGoOutError, setRummyGoOutError] = useState<string | null>(null)
+  const [c8sPendingCardId, setC8sPendingCardId] = useState<string | null>(null)
   const exchangeBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rummyGoOutErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const gameStateRef = useRef(gameState)
@@ -147,7 +153,9 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       || (!exchangePhaseActive && !discardPhaseActive && isMyTurn && !presidentHasPassed && !presidentHasFinished))
     : gameType === 'rummy'
       ? isMyTurn && gameState.rummyHasDrawn
-      : isMyTurn
+      : gameType === 'crazy-eights'
+        ? isMyTurn
+        : isMyTurn
 
   useEffect(() => {
     if (lastAction?.type === 'bluff_reveal') {
@@ -212,6 +220,20 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
     .map(z => ({ id: z.id, name: z.name, isBluffPile: z.isBluffPile }))
 
   const handlePlayCards = useCallback((cardIds: string[], toZoneId: string, claim?: { rank: string }) => {
+    if (gameType === 'crazy-eights') {
+      const cardId = cardIds[0]
+      if (!cardId) return
+      const myHand = gameStateRef.current.zones.find(z => z.id === `hand-${myPlayerId}`)
+      const card = myHand?.cards.find(c => c.id === cardId)
+      if (!card) return
+      if (card.rank === '8') {
+        // Need suit picker
+        setC8sPendingCardId(cardId)
+        return
+      }
+      send({ type: 'crazy8s_play', cardId })
+      return
+    }
     if (gameType === 'rummy') {
       const cardId = cardIds[0]
       if (!cardId) return
@@ -328,7 +350,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             <span className="text-xs font-semibold self-center mr-1" style={{ color: 'var(--text-muted)' }}>
               R{gameState.roundNumber}
             </span>
-            {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && gameType !== 'president' && gameType !== 'poker' && gameType !== 'go-fish' && gameType !== 'rummy' && (
+            {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && gameType !== 'president' && gameType !== 'poker' && gameType !== 'go-fish' && gameType !== 'rummy' && gameType !== 'crazy-eights' && (
               <TopBtn
                 onClick={() => !myHasPassed && send({ type: 'pass_turn' })}
                 disabled={myHasPassed}
@@ -336,11 +358,11 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                 {gameType === 'bluff' && myHasPassed ? 'Passed' : 'Pass'}
               </TopBtn>
             )}
-            {(gameType === 'cambio' || gameType === 'bluff' || gameType === 'president' || gameType === 'blackjack' || gameType === 'poker' || gameType === 'go-fish' || gameType === 'rummy') && (
+            {(gameType === 'cambio' || gameType === 'bluff' || gameType === 'president' || gameType === 'blackjack' || gameType === 'poker' || gameType === 'go-fish' || gameType === 'rummy' || gameType === 'crazy-eights') && (
               <TopBtn onClick={() => setShowTutorialFor(gameType)}>?</TopBtn>
             )}
             <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
-            {isHost && gameType !== 'president' && gameType !== 'poker' && gameType !== 'blackjack' && gameType !== 'go-fish' && gameType !== 'rummy' && (
+            {isHost && gameType !== 'president' && gameType !== 'poker' && gameType !== 'blackjack' && gameType !== 'go-fish' && gameType !== 'rummy' && gameType !== 'crazy-eights' && (
               <TopBtn onClick={() => send({ type: 'next_round' })} accent>
                 Next Round
               </TopBtn>
@@ -355,7 +377,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-3 overflow-y-auto">
 
         {/* Turn indicator — hidden for games with their own turn display */}
-        {gameState.turnOrder.length > 0 && gameState.currentTurnPlayerId && gameType !== 'president' && gameType !== 'poker' && gameType !== 'go-fish' && gameType !== 'rummy' && (
+        {gameState.turnOrder.length > 0 && gameState.currentTurnPlayerId && gameType !== 'president' && gameType !== 'poker' && gameType !== 'go-fish' && gameType !== 'rummy' && gameType !== 'crazy-eights' && (
           <TurnBanner gameState={gameState} myPlayerId={myPlayerId} />
         )}
 
@@ -411,6 +433,13 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           />
         ) : gameType === 'rummy' ? (
           <RummyBoard
+            gameState={gameState}
+            myPlayerId={myPlayerId}
+            send={send}
+            isHost={isHost}
+          />
+        ) : gameType === 'crazy-eights' ? (
+          <CrazyEightsBoard
             gameState={gameState}
             myPlayerId={myPlayerId}
             send={send}
@@ -484,7 +513,19 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       </div>
 
       {/* ── My hand (hidden for games with their own hand rendering) ── */}
-      {gameType !== 'cambio' && gameType !== 'euchre' && gameType !== 'poker' && gameType !== 'go-fish' && (
+      {gameType !== 'cambio' && gameType !== 'euchre' && gameType !== 'poker' && gameType !== 'go-fish' && (() => {
+        // Compute playable card IDs for crazy-eights
+        const c8sPlayableIds = gameType === 'crazy-eights' && isMyTurn ? (() => {
+          const discardZone = gameState.zones.find(z => z.id === 'discard')
+          const topCard = discardZone?.cards[discardZone.cards.length - 1]
+          if (!topCard) return undefined
+          const effectiveSuit = gameState.crazy8sDeclaredSuit ?? topCard.suit
+          const myHand = gameState.zones.find(z => z.id === `hand-${myPlayerId}`)
+          return myHand?.cards
+            .filter(c => c.rank === '8' || c.rank === topCard.rank || c.suit === effectiveSuit)
+            .map(c => c.id)
+        })() : undefined
+        return (
       <div className="flex-shrink-0 pb-safe" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
         {/* Your turn CTA — blackjack shows Hit/Stand/Split instead */}
         {gameType === 'blackjack' ? (() => {
@@ -649,7 +690,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           )
         })() : (
           <>
-            {isMyTurn && gameState.turnOrder.length > 0 && gameType !== 'rummy' && (
+            {isMyTurn && gameState.turnOrder.length > 0 && gameType !== 'rummy' && gameType !== 'crazy-eights' && (
               <div className="px-4 pt-2 fade-in">
                 <div className="w-full py-2 rounded-xl text-center"
                   style={{ background: 'var(--accent)', boxShadow: '0 0 16px rgba(245,158,11,0.25)' }}>
@@ -721,7 +762,9 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                       { id: 'discard', name: 'Discard', isBluffPile: false },
                       { id: 'go-out', name: 'Go Out', isBluffPile: false },
                     ]
-                  : playTargets}
+                  : gameType === 'crazy-eights'
+                    ? [{ id: 'discard', name: 'Play', isBluffPile: false }]
+                    : playTargets}
                 isMyTurn={handIsMyTurn}
                 gameType={gameType ?? undefined}
                 bluffActiveRank={gameState.bluffActiveRank}
@@ -731,6 +774,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                     ? 'Discard'
                     : undefined}
                 highlightCardIds={isInExchangePhase ? (presidentExchangeEntry?.receivedCardIds ?? []) : []}
+                playableCardIds={c8sPlayableIds}
               />
             ))
           )}
@@ -746,7 +790,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           )}
         </div>
       </div>
-      )}
+        )
+      })()}
 
       {showScores && (
         <ScoreBoard
@@ -779,6 +824,57 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       )}
       {showTutorialFor === 'rummy' && (
         <RummyTutorialModal onClose={() => setShowTutorialFor(null)} />
+      )}
+      {showTutorialFor === 'crazy-eights' && (
+        <CrazyEightsTutorialModal onClose={() => setShowTutorialFor(null)} />
+      )}
+
+      {/* Crazy Eights suit picker — shown when player plays an 8 */}
+      {c8sPendingCardId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-6"
+          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setC8sPendingCardId(null)}
+        >
+          <div
+            className="w-full max-w-xs rounded-3xl p-6 flex flex-col gap-4"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-center">
+              <p className="text-base font-black" style={{ color: 'var(--text)' }}>Declare a Suit</p>
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                You played an 8 — choose the suit for the next player
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {SUIT_OPTS_C8.map(suit => (
+                <button
+                  key={suit}
+                  onClick={() => {
+                    send({ type: 'crazy8s_play', cardId: c8sPendingCardId, declaredSuit: suit })
+                    setC8sPendingCardId(null)
+                  }}
+                  className="py-4 rounded-2xl font-bold text-base transition-all active:scale-95"
+                  style={{
+                    background: 'var(--surface-mid)',
+                    color: SUIT_COLOR_C8[suit],
+                    border: '1.5px solid var(--border-hi)',
+                  }}
+                >
+                  {SUIT_LABEL_C8[suit]}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setC8sPendingCardId(null)}
+              className="py-2 rounded-xl text-sm transition-all active:scale-95"
+              style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {gameState.bluffReveal && (

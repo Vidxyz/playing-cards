@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
-import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal, GoFishTutorialModal, RummyTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal, GoFishTutorialModal, RummyTutorialModal, CrazyEightsTutorialModal } from './CambioTutorial'
 import { ThemeToggle } from './ThemeToggle'
 import { DisconnectTimer } from './DisconnectTimer'
 
@@ -16,7 +16,8 @@ const GAMES: {
   { type: 'euchre',    label: 'Euchre',     icon: '🤝', desc: '2v2 trick-taking',                  min: 4, max: 4 },
   { type: 'cambio',    label: 'Cambio',     icon: '🔄', desc: 'Lowest total wins — swap & peek',   min: 2, max: 6 },
   { type: 'go-fish',   label: 'Go Fish',    icon: '🐟', desc: 'Collect books of 4 — ask & fish',   min: 2, max: 6 },
-  { type: 'rummy',     label: 'Rummy',      icon: '🃏', desc: 'Form melds, go out, lowest score wins', min: 2, max: 6 },
+  { type: 'rummy',        label: 'Rummy',         icon: '🃏', desc: 'Form melds, go out, lowest score wins', min: 2, max: 6 },
+  { type: 'crazy-eights', label: 'Crazy Eights', icon: '8️⃣', desc: 'Match suit or rank — 8s are wild!',      min: 2, max: 6 },
 ]
 
 interface Props {
@@ -35,6 +36,7 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
   const [showPokerTutorial, setShowPokerTutorial] = useState(false)
   const [showGoFishTutorial, setShowGoFishTutorial] = useState(false)
   const [showRummyTutorial, setShowRummyTutorial] = useState(false)
+  const [showCrazyEightsTutorial, setShowCrazyEightsTutorial] = useState(false)
   const [pendingKick, setPendingKick] = useState<{ id: string; name: string } | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
@@ -348,6 +350,48 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
         </div>
       )}
 
+      {/* Crazy Eights — how to play */}
+      {selectedGame === 'crazy-eights' && (
+        <div className="px-4 mb-4">
+          <button
+            onClick={() => setShowCrazyEightsTutorial(true)}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 flex items-center justify-center gap-2"
+            style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+          >
+            <span>📖</span>
+            How to play Crazy Eights
+          </button>
+        </div>
+      )}
+
+      {/* Crazy Eights bust-score config */}
+      {isHost && selectedGame === 'crazy-eights' && (
+        <Section label="Bust Score (elimination threshold)">
+          <div className="flex gap-2">
+            {[100, 200, 300, 500].map(score => {
+              const active = gameState.crazy8sMaxScore === score
+              return (
+                <button
+                  key={score}
+                  onClick={() => send({ type: 'set_crazy8s_config', maxScore: score })}
+                  className="flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+                  style={{
+                    background: active ? 'var(--accent-dim)' : 'var(--surface)',
+                    color: active ? 'var(--accent)' : 'var(--text-muted)',
+                    border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                  }}
+                >
+                  {score}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-dim)' }}>
+            A player reaching this total is eliminated. Last one standing wins.
+          </p>
+        </Section>
+      )}
+
       {/* Rummy bust-score config */}
       {isHost && selectedGame === 'rummy' && (
         <Section label="Bust Score (elimination threshold)">
@@ -599,6 +643,10 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
 
       {showRummyTutorial && (
         <RummyTutorialModal onClose={() => setShowRummyTutorial(false)} />
+      )}
+
+      {showCrazyEightsTutorial && (
+        <CrazyEightsTutorialModal onClose={() => setShowCrazyEightsTutorial(false)} />
       )}
 
       {pendingKick && (

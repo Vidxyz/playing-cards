@@ -55,6 +55,10 @@ export type ClientEvent =
   | { type: 'euchre_pass' }
   | { type: 'euchre_call_suit'; suit: Suit; goAlone?: boolean }
   | { type: 'euchre_discard'; cardId: string }
+  // Crazy Eights-specific
+  | { type: 'crazy8s_play'; cardId: string; declaredSuit?: Suit }
+  | { type: 'crazy8s_draw' }
+  | { type: 'set_crazy8s_config'; maxScore: number }
 
 // Server → Client
 export type ServerEvent =

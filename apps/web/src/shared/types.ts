@@ -49,7 +49,7 @@ export interface Team {
 
 export type GamePhase = 'lobby' | 'dealing' | 'playing' | 'round-over' | 'game-over'
 
-export type GameType = 'president' | 'blackjack' | 'poker' | 'euchre' | 'cambio' | 'bluff' | 'go-fish' | 'rummy'
+export type GameType = 'president' | 'blackjack' | 'poker' | 'euchre' | 'cambio' | 'bluff' | 'go-fish' | 'rummy' | 'crazy-eights'
 
 export interface BluffReveal {
   cards: Card[]           // actual card values — visible to all during resolution
@@ -149,6 +149,10 @@ export interface GameState {
   rummyMelds: Record<string, Card[][]>
   rummyHasDrawn: boolean
   rummyBustedPlayerIds: string[]
+  // Crazy Eights-specific
+  crazy8sMaxScore: number
+  crazy8sDeclaredSuit: Suit | null
+  crazy8sBustedPlayerIds: string[]
 }
 
 export interface GameAction {

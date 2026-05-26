@@ -626,6 +626,85 @@ export function RummyTutorialModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+export function CrazyEightsTutorialModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-3xl overflow-y-auto card-slide"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxHeight: '88vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 sticky top-0"
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>How to Play Crazy Eights</h2>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Empty your hand first — 8s are wild!</p>
+          </div>
+          <button onClick={onClose} className="text-sm px-3 py-1 rounded-full"
+            style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 pb-8 pt-4 flex flex-col gap-5">
+
+          <TutSection icon="🎯" title="Goal">
+            <p>Be the <strong>first player to empty your hand</strong> each round. When you do, all other players score the cards remaining in their hands. Accumulate too many points and you&apos;re eliminated. Last player standing wins.</p>
+          </TutSection>
+
+          <TutSection icon="🃏" title="The Deal">
+            <p>With <strong>2 players</strong>, each gets <strong>7 cards</strong>. With <strong>3–6 players</strong>, each gets <strong>5 cards</strong>. One card is flipped face-up to start the discard pile (if it&apos;s an 8, it&apos;s buried and another card is flipped). The rest form the draw pile.</p>
+          </TutSection>
+
+          <TutSection icon="🔄" title="On Your Turn">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Play a card" desc="You may play any card from your hand that matches the top discard's suit or rank. Example: if the top card is 7♥, you can play any Heart or any 7." />
+              <Row label="Play an 8 (wild)" desc="You can always play an 8 regardless of the current suit or rank. When you do, you declare the new suit for the next player. Green-glowing cards are valid plays." />
+              <Row label="Draw if stuck" desc="If you have no playable card, tap the deck to draw one card. If it's playable, you can play it immediately — otherwise you just keep it and your turn ends." />
+            </div>
+          </TutSection>
+
+          <TutSection icon="8️⃣" title="8s — Wild Cards">
+            <p>Eights can be played on <strong>any card at any time</strong>. When you play an 8, a suit picker appears — choose the suit you want the next player to match. The declared suit is shown on screen so everyone can see.</p>
+          </TutSection>
+
+          <TutSection icon="📊" title="Scoring">
+            <p>When a player empties their hand, everyone else scores the cards <strong>still in their hand</strong>:</p>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {[
+                { label: '8', pts: '50 pts' },
+                { label: 'J / Q / K', pts: '10 pts' },
+                { label: 'A', pts: '1 pt' },
+                { label: '2 – 10 (not 8)', pts: 'Face value' },
+              ].map(row => (
+                <div key={row.label} className="flex justify-between items-center px-3 py-2 rounded-lg"
+                  style={{ background: 'var(--surface-mid)', border: '1px solid var(--border)' }}>
+                  <span className="text-xs font-bold" style={{ color: 'var(--text)' }}>{row.label}</span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>{row.pts}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2">Scores accumulate across rounds. The player who empties their hand scores <strong>0</strong> for that round.</p>
+          </TutSection>
+
+          <TutSection icon="💥" title="Bust &amp; Elimination">
+            <p>Once a player&apos;s <strong>total score reaches or exceeds the bust threshold</strong> (set by the host), they are eliminated. The game continues until only one player remains — they win!</p>
+          </TutSection>
+
+          <TutSection icon="💡" title="Strategy Tips">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Save your 8s" desc="Eights are powerful get-out-of-jail cards. Don't waste them early — use them when you're truly stuck, or to end the game by playing your last card." />
+              <Row label="Declare a suit you hold" desc="When you play an 8, always declare a suit you have other cards in — this gives you a free play next time if the suit holds." />
+              <Row label="Shed high cards early" desc="J, Q, K and especially 8s carry big points. Dump them before the round ends if they don't fit." />
+            </div>
+          </TutSection>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TutSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (
     <div>

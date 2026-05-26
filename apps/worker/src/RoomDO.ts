@@ -102,6 +102,9 @@ function makeInitialState(roomCode: string, hostId = ''): GameState {
     rummyMelds: {},
     rummyHasDrawn: false,
     rummyBustedPlayerIds: [],
+    crazy8sMaxScore: 200,
+    crazy8sDeclaredSuit: null,
+    crazy8sBustedPlayerIds: [],
   }
 }
 
@@ -367,6 +370,17 @@ export class RoomDO implements DurableObject {
       }
       // Reset the draw-state if it was this player's turn
       gs.rummyHasDrawn = false
+    } else if (gs.gameType === 'crazy-eights') {
+      const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+      if (handZone && handZone.cards.length > 0) {
+        this.drawPile.push(...handZone.cards)
+        handZone.cards = []
+        for (let i = this.drawPile.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
+        }
+        gs.drawPileCount = this.drawPile.length
+      }
     }
   }
 
@@ -603,6 +617,21 @@ export class RoomDO implements DurableObject {
       case 'set_rummy_config':
         if (!player.isHost) return
         gs.rummyMaxScore = Math.max(10, event.maxScore)
+        break
+
+      case 'set_crazy8s_config':
+        if (!player.isHost) return
+        gs.crazy8sMaxScore = Math.max(10, event.maxScore)
+        break
+
+      case 'crazy8s_play':
+        if (gs.gameType !== 'crazy-eights' || gs.currentTurnPlayerId !== playerId) return
+        await this.handleCrazy8sPlay(gs, player, event.cardId, event.declaredSuit)
+        return
+
+      case 'crazy8s_draw':
+        if (gs.gameType !== 'crazy-eights' || gs.currentTurnPlayerId !== playerId) return
+        this.handleCrazy8sDraw(gs, player)
         break
 
       case 'rummy_draw':
@@ -1068,6 +1097,22 @@ export class RoomDO implements DurableObject {
       }
       // Only non-busted players participate in turns
       const activePlayers = gs.players.filter(p => !gs.rummyBustedPlayerIds.includes(p.id))
+      gs.turnOrder = activePlayers.map(p => p.id)
+      const randomIdx = Math.floor(Math.random() * gs.turnOrder.length)
+      gs.currentTurnPlayerId = gs.turnOrder[randomIdx]
+      gs.roundNumber++
+      gs.phase = 'playing'
+      gs.lastAction = { type: 'deal', playerId: gs.hostId, timestamp: Date.now() }
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
+
+    // Crazy Eights: reset state, pick random start player
+    if (gs.gameType === 'crazy-eights') {
+      gs.crazy8sDeclaredSuit = null
+      for (const p of gs.players) p.isFolded = false
+      const activePlayers = gs.players.filter(p => !gs.crazy8sBustedPlayerIds.includes(p.id))
       gs.turnOrder = activePlayers.map(p => p.id)
       const randomIdx = Math.floor(Math.random() * gs.turnOrder.length)
       gs.currentTurnPlayerId = gs.turnOrder[randomIdx]
@@ -1569,6 +1614,25 @@ export class RoomDO implements DurableObject {
       return
     }
 
+    // Crazy Eights: bust check, then redeal
+    if (gs.gameType === 'crazy-eights') {
+      for (const p of gs.players) {
+        if (p.totalScore >= gs.crazy8sMaxScore && !gs.crazy8sBustedPlayerIds.includes(p.id)) {
+          gs.crazy8sBustedPlayerIds.push(p.id)
+        }
+      }
+      const active = gs.players.filter(p => !gs.crazy8sBustedPlayerIds.includes(p.id))
+      if (active.length <= 1) {
+        gs.phase = 'game-over'
+        await this.saveState(gs)
+        await this.broadcastState(gs)
+        return
+      }
+      gs.crazy8sDeclaredSuit = null
+      await this.handleDeal(gs)
+      return
+    }
+
     // Euchre: reset bidding state, check for game over (10 pts), then redeal
     if (gs.gameType === 'euchre') {
       gs.euchrePhase = null
@@ -1677,6 +1741,9 @@ export class RoomDO implements DurableObject {
     gs.rummyMelds = {}
     gs.rummyHasDrawn = false
     gs.rummyBustedPlayerIds = []
+    // Crazy Eights
+    gs.crazy8sDeclaredSuit = null
+    gs.crazy8sBustedPlayerIds = []
     // Players
     for (const p of gs.players) {
       p.isReady = false
@@ -2652,6 +2719,95 @@ export class RoomDO implements DurableObject {
   }
 
   // ── End Rummy handlers ────────────────────────────────────────
+
+  // ── Crazy Eights handlers ─────────────────────────────────────
+
+  private async handleCrazy8sPlay(gs: GameState, player: Player, cardId: string, declaredSuit?: Suit): Promise<void> {
+    const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+    const discardZone = gs.zones.find(z => z.id === 'discard')
+    if (!handZone || !discardZone) return
+
+    const cardIdx = handZone.cards.findIndex(c => c.id === cardId)
+    if (cardIdx === -1) return
+
+    const card = handZone.cards[cardIdx]
+    const topCard = discardZone.cards[discardZone.cards.length - 1]
+    if (!topCard) return
+
+    const effectiveSuit = gs.crazy8sDeclaredSuit ?? topCard.suit
+    const canPlay = card.rank === '8' || card.rank === topCard.rank || card.suit === effectiveSuit
+    if (!canPlay) return
+
+    handZone.cards.splice(cardIdx, 1)
+    discardZone.cards.push(card)
+
+    if (card.rank === '8') {
+      gs.crazy8sDeclaredSuit = declaredSuit ?? 'spades'
+    } else {
+      gs.crazy8sDeclaredSuit = null
+    }
+
+    gs.lastAction = {
+      type: 'play',
+      playerId: player.id,
+      cardIds: [cardId],
+      fromZoneId: `hand-${player.id}`,
+      toZoneId: 'discard',
+      timestamp: Date.now(),
+    }
+
+    if (handZone.cards.length === 0) {
+      await this.endCrazy8sRound(gs, player.id)
+      return
+    }
+
+    this.advanceTurn(gs)
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+  }
+
+  private handleCrazy8sDraw(gs: GameState, player: Player): void {
+    if (this.drawPile.length === 0) this.reshuffleDiscardIntoDraw(gs)
+    if (this.drawPile.length === 0) {
+      // Deck is empty, nothing to draw — pass turn
+      this.advanceTurn(gs)
+      gs.lastAction = { type: 'pass', playerId: player.id, timestamp: Date.now() }
+      return
+    }
+
+    const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+    if (!handZone) return
+
+    const card = this.drawPile.shift()!
+    handZone.cards.push(card)
+    gs.drawPileCount = this.drawPile.length
+
+    gs.lastAction = { type: 'draw', playerId: player.id, toZoneId: `hand-${player.id}`, timestamp: Date.now() }
+  }
+
+  private async endCrazy8sRound(gs: GameState, winnerId: string): Promise<void> {
+    for (const p of gs.players) {
+      const handZone = gs.zones.find(z => z.id === `hand-${p.id}`)
+      if (!handZone) continue
+      p.roundScore = handZone.cards.reduce((sum, c) => sum + this.crazy8sCardScore(c), 0)
+      // Reveal all hands so the round-over screen can show remaining cards
+      handZone.visibility = 'face-up'
+    }
+    gs.phase = 'round-over'
+    gs.lastAction = { type: 'play', playerId: winnerId, timestamp: Date.now() }
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+  }
+
+  private crazy8sCardScore(card: Card): number {
+    if (card.rank === '8') return 50
+    if (['J', 'Q', 'K'].includes(card.rank)) return 10
+    if (card.rank === 'A') return 1
+    const n = parseInt(card.rank)
+    return isNaN(n) ? 0 : n
+  }
+
+  // ── End Crazy Eights handlers ─────────────────────────────────
 
   // ── Standard helpers ──────────────────────────────────────────
 
