@@ -2212,10 +2212,15 @@ export class RoomDO implements DurableObject {
     if (gs.presidentRunPlays.length >= 3) {
       // Run of 3+ detected — advance turn, open discard, enter extension mode
       this.advanceTurnPresident(gs, removedIdx)
-      const runParticipants = gs.presidentRunPlays.filter(rp => {
+      // Deduplicate by playerId (2-player games can produce P1→P2→P1 runs)
+      const seen = new Set<string>()
+      const runParticipants = [...gs.presidentRunPlays].reverse().filter(rp => {
         const h = gs.zones.find(z => z.id === `hand-${rp.playerId}`)
-        return (h?.cards.length ?? 0) > 0
-      })
+        if ((h?.cards.length ?? 0) === 0) return false
+        if (seen.has(rp.playerId)) return false
+        seen.add(rp.playerId)
+        return true
+      }).reverse()
       if (runParticipants.length > 0) {
         gs.presidentDiscardPhase = runParticipants.map(rp => ({
           playerId: rp.playerId,
