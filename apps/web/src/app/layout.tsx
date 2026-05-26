@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Playing Cards',
+  title: 'DealMeIn',
   description: 'Virtual card table — play any card game on your phone',
   manifest: '/manifest.json',
 }

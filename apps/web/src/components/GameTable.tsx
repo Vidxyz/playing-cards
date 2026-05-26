@@ -295,78 +295,47 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
 
       {/* ── Top bar ─────────────────────────────────── */}
       <div className="flex-shrink-0 pt-safe" style={{ borderBottom: '1px solid var(--border)' }}>
-        <div className="flex items-center justify-between px-4 py-2">
-          <div className="flex flex-col gap-2">
-            {/* Exit: End Game (host) or Leave (non-host) */}
-            {isHost ? (
-              <button
-                onClick={() => send({ type: 'end_game' })}
-                className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 self-start"
-                style={{
-                  background: 'rgba(229,62,62,0.12)',
-                  color: '#fc8181',
-                  border: '1px solid rgba(229,62,62,0.25)',
-                }}
-              >
-                End Game
-              </button>
-            ) : (
-              <button
-                onClick={onLeave}
-                className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 self-start"
-                style={{
-                  background: 'var(--surface-mid)',
-                  color: 'var(--text-muted)',
-                  border: '1px solid var(--border)',
-                }}
-              >
-                Leave
-              </button>
-            )}
 
-            {/* Me indicator */}
-            {me && (
-              <div className="flex items-center gap-1.5 pl-1">
-                <div
-                  className="flex items-center justify-center rounded-full text-[9px] font-black flex-shrink-0"
-                  style={{ width: 20, height: 20, background: 'var(--accent)', color: '#000' }}
-                >
-                  {me.name.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="flex flex-col leading-none">
-                  <span className="text-[11px] font-bold truncate max-w-[80px]" style={{ color: 'var(--text)' }}>
-                    {me.name}
-                  </span>
-                  {isHost && (
-                    <span className="text-[9px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                      host
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
+        {/* Row 1: Exit | Brand (centered) | Actions + Settings */}
+        <div className="relative flex items-center px-4 py-2">
+
+          {/* Left: exit button */}
+          {isHost ? (
+            <button
+              onClick={() => send({ type: 'end_game' })}
+              className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 flex-shrink-0"
+              style={{
+                background: 'rgba(229,62,62,0.12)',
+                color: '#fc8181',
+                border: '1px solid rgba(229,62,62,0.25)',
+              }}
+            >
+              End Game
+            </button>
+          ) : (
+            <button
+              onClick={onLeave}
+              className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 flex-shrink-0"
+              style={{
+                background: 'var(--surface-mid)',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border)',
+              }}
+            >
+              Leave
+            </button>
+          )}
+
+          {/* Center: DealMeIn brand — absolutely centred so it's unaffected by side widths */}
+          <div className="absolute left-0 right-0 flex items-center justify-center pointer-events-none">
+            <div className="flex items-center gap-1.5">
+              <span style={{ fontSize: 20, lineHeight: 1 }}>🃏</span>
+              <span className="font-black text-base tracking-wide" style={{ color: 'var(--text)' }}>DealMeIn</span>
+            </div>
           </div>
 
-          {/* Game name + trump badge */}
-          <div className="flex flex-col items-center gap-1">
-            {gameType && (
-              <span className="text-[10px] font-bold uppercase tracking-widest"
-                style={{ color: 'var(--text-muted)' }}>
-                {GAME_LABEL[gameType] ?? gameType}
-              </span>
-            )}
-            {gameState.trumpSuit && (
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
-                {SUIT_SYMBOL[gameState.trumpSuit]} Trump
-              </span>
-            )}
-          </div>
-
-          <div className="flex gap-1.5">
-            <span className="text-xs font-semibold self-center mr-1" style={{ color: 'var(--text-muted)' }}>
-              R{gameState.roundNumber}
-            </span>
+          {/* Right: actions + settings */}
+          <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
             {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && gameType !== 'president' && gameType !== 'poker' && gameType !== 'go-fish' && gameType !== 'rummy' && gameType !== 'crazy-eights' && (
               <TopBtn
                 onClick={() => !myHasPassed && send({ type: 'pass_turn' })}
@@ -381,13 +350,45 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
             {isHost && gameType !== 'president' && gameType !== 'poker' && gameType !== 'blackjack' && gameType !== 'go-fish' && gameType !== 'rummy' && gameType !== 'crazy-eights' && (
               <TopBtn onClick={() => send({ type: 'next_round' })} accent>
-                Next Round
+                Next
               </TopBtn>
             )}
             <ThemeToggle compact />
           </div>
         </div>
-        <PlayerStrip gameState={gameState} myPlayerId={myPlayerId} />
+
+        {/* Row 2: player identity */}
+        {me && (
+          <div className="flex items-center gap-2 px-4 pt-0.5 pb-1.5">
+            <div
+              className="flex items-center justify-center rounded-full text-[9px] font-black flex-shrink-0"
+              style={{ width: 22, height: 22, background: 'var(--accent)', color: '#000' }}
+            >
+              {me.name.slice(0, 2).toUpperCase()}
+            </div>
+            <span className="text-xs font-bold truncate max-w-[90px]" style={{ color: 'var(--text)' }}>
+              {me.name}
+            </span>
+            {isHost && (
+              <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                host
+              </span>
+            )}
+            {gameState.trumpSuit && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-auto"
+                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                {SUIT_SYMBOL[gameState.trumpSuit]} Trump
+              </span>
+            )}
+          </div>
+        )}
+
+        <PlayerStrip
+          gameState={gameState}
+          myPlayerId={myPlayerId}
+          centerLabel={gameType ? (GAME_LABEL[gameType] ?? gameType) : undefined}
+        />
       </div>
 
       {/* ── Table (shared zones + draw pile) ─────────── */}

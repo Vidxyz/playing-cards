@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 
-export const metadata: Metadata = { title: 'Playing Cards — About' }
+export const metadata: Metadata = { title: 'DealMeIn — About' }
 
 const GAMES = [
   { name: 'Blackjack', desc: 'Hit, stand, split — beat the dealer.' },
@@ -42,7 +42,7 @@ export default function AboutPage() {
             <span className="text-3xl">🃏</span>
           </div>
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Playing Cards</h1>
+            <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>DealMeIn</h1>
             <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Virtual card table for any game</p>
           </div>
         </div>
@@ -53,7 +53,7 @@ export default function AboutPage() {
           style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
         >
           <p style={{ color: 'var(--text-muted)' }}>
-            <span className="font-bold" style={{ color: 'var(--text)' }}>Playing Cards</span> is a real-time multiplayer card
+            <span className="font-bold" style={{ color: 'var(--text)' }}>DealMeIn</span> is a real-time multiplayer card
             table that runs entirely in your browser — no accounts, no downloads, just share a room code and play.
           </p>
           <p style={{ color: 'var(--text-muted)' }}>

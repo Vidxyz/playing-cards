@@ -63,7 +63,7 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
     <div className="flex flex-col h-full overflow-y-auto" style={{ background: 'var(--bg)' }}>
 
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+      <div className="relative flex items-center px-4 py-3 flex-shrink-0"
         style={{ borderBottom: '1px solid var(--border)' }}>
         {isHost ? (
           <button
@@ -90,7 +90,15 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
             Leave
           </button>
         )}
-        <ThemeToggle compact />
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="flex items-center gap-1.5">
+            <span style={{ fontSize: 18 }}>🃏</span>
+            <span className="font-black text-sm tracking-wide" style={{ color: 'var(--text)' }}>DealMeIn</span>
+          </div>
+        </div>
+        <div className="ml-auto">
+          <ThemeToggle compact />
+        </div>
       </div>
 
       {/* Room code hero */}
@@ -206,11 +214,13 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
                   cursor: clickable ? 'pointer' : 'default',
                 }}
               >
-                <span className="text-xl mb-1.5">{game.icon}</span>
-                <span className="font-bold text-sm" style={{ color: active ? 'var(--accent)' : 'var(--text)' }}>
-                  {game.label}
-                </span>
-                <span className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{game.desc}</span>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-xl leading-none">{game.icon}</span>
+                  <span className="font-bold text-sm leading-tight" style={{ color: active ? 'var(--accent)' : 'var(--text)' }}>
+                    {game.label}
+                  </span>
+                </div>
+                <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{game.desc}</span>
                 <span className="text-[10px] mt-1" style={{ color: locked ? 'var(--text-dim)' : playerMismatch ? '#f87171' : 'var(--text-dim)' }}>
                   {locked ? 'Coming soon' : game.min === game.max ? `${game.min} players` : `${game.min}–${game.max} players`}
                   {!locked && active && playerMismatch && (tooFew ? ` · need ${game.min - playerCount} more` : ` · too many`)}

@@ -108,12 +108,12 @@ function HomeInner() {
 
         {/* Logo */}
         <div className="text-center mb-2">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4"
+          <div className="inline-flex items-center justify-center w-24 h-24 rounded-3xl mb-4"
             style={{ background: 'var(--surface-mid)', border: '1px solid var(--border-hi)' }}>
-            <span className="text-3xl">🃏</span>
+            <span style={{ fontSize: 52 }}>🃏</span>
           </div>
-          <h1 className="font-bold text-2xl tracking-tight" style={{ color: 'var(--text)' }}>
-            Playing Cards
+          <h1 className="font-black text-3xl tracking-tight" style={{ color: 'var(--text)' }}>
+            DealMeIn
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
             Virtual card table for any game
@@ -213,10 +213,28 @@ function HomeInner() {
 
         {/* Supported games */}
         <div className="flex justify-center gap-2 flex-wrap pt-1">
-          {['President', 'Poker', 'Blackjack', 'Euchre', 'Cambio', 'Bluff'].map(g => (
-            <span key={g} className="text-xs px-2 py-0.5 rounded-full"
-              style={{ background: 'var(--surface)', color: 'var(--text-dim)', border: '1px solid var(--border)' }}>
-              {g}
+          {[
+            { label: 'President',    icon: '👑' },
+            { label: 'Poker',        icon: '♠️' },
+            { label: 'Blackjack',    icon: '21' },
+            { label: 'Euchre',       icon: '🤝' },
+            { label: 'Cambio',       icon: '🔄' },
+            { label: 'Bluff',        icon: '🎭' },
+            { label: 'Go Fish',      icon: '🐟' },
+            { label: 'Rummy',        icon: '🃏' },
+            { label: 'Crazy Eights', icon: '8️⃣' },
+          ].map(g => (
+            <span
+              key={g.label}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full"
+              style={{
+                background: 'var(--surface-mid)',
+                color: 'var(--text)',
+                border: '1px solid var(--border-hi)',
+              }}
+            >
+              <span style={{ fontSize: 13 }}>{g.icon}</span>
+              {g.label}
             </span>
           ))}
         </div>
