@@ -501,9 +501,15 @@ export class RoomDO implements DurableObject {
 
       case 'end_game':
         if (!player.isHost) return
-        await this.broadcast({ type: 'kicked', reason: 'Game ended by host' }, null)
-        await this.state.storage.deleteAll()
-        return
+        if (gs.phase === 'lobby') {
+          // End Room from lobby → terminate entirely
+          await this.broadcast({ type: 'kicked', reason: 'Room closed by host' }, null)
+          await this.state.storage.deleteAll()
+          return
+        }
+        // End Game from active game → return to lobby, keep all players
+        this.resetToLobby(gs)
+        break
 
       case 'set_trump':
         if (!player.isHost) return
@@ -1506,6 +1512,77 @@ export class RoomDO implements DurableObject {
 
     await this.saveState(gs)
     await this.broadcastState(gs)
+  }
+
+  private resetToLobby(gs: GameState): void {
+    gs.phase = 'lobby'
+    gs.zones = []
+    gs.turnOrder = []
+    gs.currentTurnPlayerId = null
+    gs.trumpSuit = null
+    gs.lastAction = null
+    gs.roundNumber = 0
+    gs.drawPileCount = 0
+    this.drawPile = []
+    // Bluff
+    gs.bluffReveal = null
+    gs.lastBluffBatch = null
+    gs.bluffActiveRank = null
+    gs.bluffHistory = []
+    gs.bluffPassCount = 0
+    gs.bluffPassedPlayerIds = []
+    // Euchre
+    gs.euchrePhase = null
+    gs.euchreTopCard = null
+    gs.euchreDealerPlayerId = null
+    gs.euchreMakerPlayerId = null
+    gs.euchreGoingAlone = false
+    gs.euchreBidPassCount = 0
+    gs.euchreCurrentTrickLedSuit = null
+    // Blackjack
+    gs.blackjackResults = null
+    gs.blackjackStood = []
+    gs.blackjackSplits = []
+    gs.blackjackMainHandDone = []
+    gs.blackjackSplitBets = {}
+    gs.blackjackSplitResults = null
+    gs.blackjackBets = {}
+    // Cambio
+    gs.cambioDrawn = null
+    gs.cambioPower = null
+    gs.cambioCaller = null
+    gs.cambioFinalRound = false
+    gs.cambioPeekSwapTarget = null
+    // President
+    gs.presidentCombo = null
+    gs.presidentFinishOrder = []
+    gs.presidentPassedIds = []
+    gs.presidentRunPlays = []
+    gs.presidentDiscardPhase = null
+    gs.presidentRunExtension = null
+    gs.presidentExchangePhase = null
+    gs.presidentRoles = {}
+    // Poker
+    gs.pokerPhase = null
+    gs.pokerWinners = null
+    gs.pokerPot = 0
+    gs.pokerCurrentBet = 0
+    gs.pokerPlayerBets = {}
+    gs.pokerActedThisRound = []
+    gs.pokerAllIn = []
+    // Go Fish
+    gs.goFishBooks = {}
+    gs.goFishLastAsk = null
+    // Players
+    for (const p of gs.players) {
+      p.isReady = false
+      p.isFolded = false
+      p.trickCount = 0
+      p.roundScore = 0
+    }
+    for (const t of gs.teams) {
+      t.roundScore = 0
+    }
   }
 
   private async handleKickPlayer(gs: GameState, targetPlayerId: string): Promise<void> {
@@ -2784,20 +2861,42 @@ export class RoomDO implements DurableObject {
     gs.lastAction = { type: 'draw', playerId: pid, toZoneId: activeZoneId, timestamp: Date.now() }
 
     const value = this.bjHandValue(zone.cards)
-    if (value > 21) {
-      if (hasSplit && !mainDone) {
-        // Main hand bust — advance to split hand without moving to next player
-        gs.blackjackMainHandDone.push(pid)
-      } else if (hasSplit && mainDone) {
-        // Split hand bust — fully done
-        if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
-        this.advanceTurnBlackjack(gs)
+    if (value >= 21) {
+      // Broadcast the 21 / bust so the client can show it briefly before advancing
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      await new Promise<void>(r => setTimeout(r, 1500))
+
+      if (value > 21) {
+        if (hasSplit && !mainDone) {
+          gs.blackjackMainHandDone.push(pid)
+        } else if (hasSplit && mainDone) {
+          if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
+          this.advanceTurnBlackjack(gs)
+        } else {
+          player.isFolded = true
+          if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
+          this.advanceTurnBlackjack(gs)
+        }
       } else {
-        // Regular bust
-        player.isFolded = true
-        if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
-        this.advanceTurnBlackjack(gs)
+        // Hit 21 exactly — auto-stand
+        if (hasSplit && !mainDone) {
+          gs.blackjackMainHandDone.push(pid)
+        } else {
+          if (!gs.blackjackStood.includes(pid)) gs.blackjackStood.push(pid)
+          this.advanceTurnBlackjack(gs)
+        }
       }
+
+      if (this.allBlackjackPlayersDone(gs)) {
+        await this.saveState(gs)
+        await this.broadcastState(gs)
+        await this.handleBlackjackDealerPlay(gs)
+        return
+      }
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
     }
 
     if (this.allBlackjackPlayersDone(gs)) {

@@ -522,11 +522,16 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                   <span className="font-black text-sm tracking-widest" style={{ color: '#fc8181' }}>BUST</span>
                 </div>
               ) : activeTotal === 21 && isMyTurn ? (
-                <div className="w-full py-2 rounded-xl text-center"
-                  style={{ background: 'var(--accent-dim)', border: '1px solid rgba(245,158,11,0.3)' }}>
-                  <span className="font-black text-sm tracking-widest" style={{ color: 'var(--accent)' }}>
+                <div className="fade-in w-full py-3 rounded-2xl flex items-center justify-center gap-2"
+                  style={{
+                    background: 'var(--accent)',
+                    boxShadow: '0 0 24px rgba(245,158,11,0.45)',
+                  }}>
+                  <span style={{ fontSize: 18 }}>{!hasSplit && myMainCards.length === 2 ? '🃏' : '⭐'}</span>
+                  <span className="font-black text-base tracking-widest" style={{ color: '#000' }}>
                     {!hasSplit && myMainCards.length === 2 ? 'BLACKJACK!' : '21!'}
                   </span>
+                  <span style={{ fontSize: 18 }}>{!hasSplit && myMainCards.length === 2 ? '🃏' : '⭐'}</span>
                 </div>
               ) : isMyTurn ? (
                 <div className="flex gap-2">

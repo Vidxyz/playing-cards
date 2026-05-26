@@ -118,17 +118,29 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
       {/* Players */}
       <Section label={`Players (${playerCount})`}>
         <div className="flex flex-col gap-1.5">
-          {gameState.players.map(player => (
+          {gameState.players.map(player => {
+            const isMe = player.id === myPlayerId
+            return (
             <div key={player.id}
               className="flex items-center justify-between rounded-xl px-3 py-2.5"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+              style={{
+                background: isMe ? 'var(--accent-dim)' : 'var(--surface)',
+                border: '1px solid ' + (isMe ? 'rgba(245,158,11,0.35)' : 'var(--border)'),
+              }}>
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-                  style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)' }}>
+                  style={{
+                    background: isMe ? 'var(--accent)' : 'var(--surface-mid)',
+                    color: isMe ? '#000' : 'var(--text-muted)',
+                  }}>
                   {player.name.slice(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{player.name}</span>
+                  <span className="text-sm font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>{player.name}</span>
+                  {isMe && (
+                    <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide"
+                      style={{ color: 'var(--accent)', opacity: 0.7 }}>you</span>
+                  )}
                   {player.isHost && (
                     <span className="ml-2 text-[10px] font-bold uppercase tracking-wide"
                       style={{ color: 'var(--accent)' }}>Host</span>
@@ -159,7 +171,7 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
                 )}
               </div>
             </div>
-          ))}
+          )})}
         </div>
       </Section>
 
