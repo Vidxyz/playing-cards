@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { GameState, ClientEvent } from '@playing-cards/shared'
 import { Card } from './Card'
 import { ChipSvg, ChipStack } from './BlackjackBoard'
+import { getPokerBlinds } from '@/lib/poker'
 
 // Distinct per-seat colors for player identification
 const PLAYER_COLORS = [
@@ -24,18 +25,6 @@ function getPlayerColorMap(gameState: GameState): Record<string, string> {
   return map
 }
 
-function getSbBbIds(gameState: GameState): { sbId: string | null; bbId: string | null } {
-  if (!gameState.pokerDealerPlayerId) return { sbId: null, bbId: null }
-  const sorted = [...gameState.players].sort((a, b) => a.seatIndex - b.seatIndex)
-  const dealerIdx = sorted.findIndex(p => p.id === gameState.pokerDealerPlayerId)
-  if (dealerIdx === -1 || sorted.length < 2) return { sbId: null, bbId: null }
-  const n = sorted.length
-  if (n === 2) {
-    // Heads-up: dealer = SB
-    return { sbId: sorted[dealerIdx].id, bbId: sorted[(dealerIdx + 1) % n].id }
-  }
-  return { sbId: sorted[(dealerIdx + 1) % n].id, bbId: sorted[(dealerIdx + 2) % n].id }
-}
 
 function chipColor(count: number): string {
   if (count >= 1000) return '#d97706'
@@ -89,7 +78,7 @@ export function PokerBoard({ gameState, myPlayerId, send, onLeave, isHost }: Pro
     ...(gameState.zones.find(z => z.id === 'river')?.cards ?? []),
   ]
 
-  const { sbId, bbId } = getSbBbIds(gameState)
+  const { sbId, bbId } = getPokerBlinds(gameState)
   const playerColorMap = getPlayerColorMap(gameState)
   const myColor = playerColorMap[myPlayerId] ?? 'var(--accent)'
 

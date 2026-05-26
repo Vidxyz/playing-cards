@@ -2,7 +2,7 @@ import type {
   GameState, GamePhase, Player, Team, Zone, Card, Suit,
   ClientEvent, ServerEvent, GameAction
 } from '@playing-cards/shared'
-import { rankName } from '@playing-cards/shared'
+import { rankName, checkRummyGoOut } from '@playing-cards/shared'
 import { buildDeck, shuffle } from './game/deck'
 import { buildZones, dealCards } from './game/deal'
 import { getConfig } from './game/zones'
@@ -342,7 +342,8 @@ export class RoomDO implements DurableObject {
 
       // If all remaining players (other than the last submitter) have now passed, clear the pile
       if (gs.lastBluffBatch) {
-        const others = gs.turnOrder.filter(id => id !== gs.lastBluffBatch!.submitterId)
+        const submitterId = gs.lastBluffBatch.submitterId
+        const others = gs.turnOrder.filter(id => id !== submitterId)
         const allPassed = others.length === 0 || others.every(id => gs.bluffPassedPlayerIds.includes(id))
         if (allPassed) this.handleBluffPassClear(gs, pid)
       }
@@ -361,10 +362,7 @@ export class RoomDO implements DurableObject {
       if (handZone && handZone.cards.length > 0) {
         this.drawPile.push(...handZone.cards)
         handZone.cards = []
-        for (let i = this.drawPile.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
-        }
+        this.drawPile = shuffle(this.drawPile)
         gs.drawPileCount = this.drawPile.length
       }
     } else if (gs.gameType === 'rummy') {
@@ -373,10 +371,7 @@ export class RoomDO implements DurableObject {
       if (handZone && handZone.cards.length > 0) {
         this.drawPile.push(...handZone.cards)
         handZone.cards = []
-        for (let i = this.drawPile.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
-        }
+        this.drawPile = shuffle(this.drawPile)
         gs.drawPileCount = this.drawPile.length
       }
       // Reset the draw-state if it was this player's turn
@@ -386,10 +381,7 @@ export class RoomDO implements DurableObject {
       if (handZone && handZone.cards.length > 0) {
         this.drawPile.push(...handZone.cards)
         handZone.cards = []
-        for (let i = this.drawPile.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
-        }
+        this.drawPile = shuffle(this.drawPile)
         gs.drawPileCount = this.drawPile.length
       }
     }
@@ -1137,10 +1129,7 @@ export class RoomDO implements DurableObject {
       }
       // Reshuffle returned cards back into draw pile
       if (gs.rummyBustedPlayerIds.length > 0) {
-        for (let i = this.drawPile.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
-        }
+        this.drawPile = shuffle(this.drawPile)
         gs.drawPileCount = this.drawPile.length
       }
       // Only non-busted players participate in turns
@@ -1406,7 +1395,7 @@ export class RoomDO implements DurableObject {
     // Give top card to dealer
     const kitty = gs.zones.find(z => z.id === 'kitty')
     const dealerHand = gs.zones.find(z => z.id === `hand-${gs.euchreDealerPlayerId}`)
-    if (kitty && dealerHand) {
+    if (kitty && dealerHand && gs.euchreTopCard) {
       const idx = kitty.cards.findIndex(c => c.id === gs.euchreTopCard!.id)
       if (idx !== -1) dealerHand.cards.push(...kitty.cards.splice(idx, 1))
     }
@@ -1986,7 +1975,7 @@ export class RoomDO implements DurableObject {
     // Stick is always available when the discard pile has a card — anyone, any time
     const discard = gs.zones.find(z => z.id === 'discard')
     if (!discard || discard.cards.length === 0) return null
-    const topCard = discard.cards[discard.cards.length - 1]
+    const topCard = discard.cards.at(-1)!
     const zone = gs.zones.find(z => z.id === zoneId && z.ownerId === player.id)
     if (!zone || zone.cards.length === 0) return null
     const stickerCard = zone.cards[0]
@@ -2244,7 +2233,7 @@ export class RoomDO implements DurableObject {
     }
 
     // ── Normal run-building mode ─────────────────────────────────
-    const last = gs.presidentRunPlays[gs.presidentRunPlays.length - 1]
+    const last = gs.presidentRunPlays.at(-1)
     const lastRv = last ? (PRESIDENT_RANK_VALUE[last.rank] ?? -1) : -1
     const extendsRun = !last || (
       last.playerId !== player.id &&
@@ -2276,7 +2265,7 @@ export class RoomDO implements DurableObject {
           done: false,
         }))
       }
-      const lastPlay = gs.presidentRunPlays[gs.presidentRunPlays.length - 1]
+      const lastPlay = gs.presidentRunPlays.at(-1)!
       gs.presidentRunExtension = {
         lastRank: lastPlay.rank,
         lastCount: lastPlay.count,
@@ -2623,7 +2612,7 @@ export class RoomDO implements DurableObject {
     if (faceDown) {
       // Going out: all remaining cards must meld AND at least one meld must be a pure run
       const remaining = handZone.cards.filter(c => c.id !== cardId)
-      if (!this.canCompletelyMeldWithPureRun(remaining)) return
+      if (checkRummyGoOut(remaining) !== 'ok') return
       const [card] = handZone.cards.splice(idx, 1)
       const discardZone = gs.zones.find(z => z.id === 'discard')
       if (discardZone) discardZone.cards.push(card)
@@ -2644,59 +2633,6 @@ export class RoomDO implements DurableObject {
     this.advanceTurn(gs)
     await this.saveState(gs)
     await this.broadcastState(gs)
-  }
-
-  private canCompletelyMeld(cards: Card[]): boolean {
-    if (cards.length === 0) return true
-    if (cards.length < 3) return false
-
-    const anchor = cards[0]
-    const others = cards.slice(1)
-    const n = others.length
-
-    for (let mask = 0; mask < (1 << n); mask++) {
-      const subset: Card[] = []
-      for (let i = 0; i < n; i++) {
-        if (mask & (1 << i)) subset.push(others[i])
-      }
-      const meld = [anchor, ...subset]
-      if (meld.length < 3) continue
-      if (!this.isValidRummyMeld(meld)) continue
-      const remaining = others.filter((_, i) => !(mask & (1 << i)))
-      if (this.canCompletelyMeld(remaining)) return true
-    }
-
-    return false
-  }
-
-  // True run with no jokers (wildcards)
-  private isPureRun(cards: Card[]): boolean {
-    if (cards.some(c => c.rank === 'JKR')) return false
-    if (cards.every(c => c.rank === cards[0].rank)) return false  // it's a set
-    return this.isValidRummyMeld(cards)
-  }
-
-  // Backtracking partition search that also tracks whether a pure run has been found
-  private meldPartitionExists(cards: Card[], hasPureRun: boolean): boolean {
-    if (cards.length === 0) return hasPureRun
-    if (cards.length < 3) return false
-    const anchor = cards[0]
-    const others = cards.slice(1)
-    const n = others.length
-    for (let mask = 0; mask < (1 << n); mask++) {
-      const subset: Card[] = []
-      for (let i = 0; i < n; i++) if (mask & (1 << i)) subset.push(others[i])
-      const meld = [anchor, ...subset]
-      if (meld.length < 3 || !this.isValidRummyMeld(meld)) continue
-      const remaining = others.filter((_, i) => !(mask & (1 << i)))
-      if (this.meldPartitionExists(remaining, hasPureRun || this.isPureRun(meld))) return true
-    }
-    return false
-  }
-
-  // All cards meld AND at least one of those melds is a pure (joker-free) run
-  private canCompletelyMeldWithPureRun(cards: Card[]): boolean {
-    return this.meldPartitionExists(cards, false)
   }
 
   private async endRummyRound(gs: GameState, winnerPlayerId: string): Promise<void> {
@@ -2720,54 +2656,16 @@ export class RoomDO implements DurableObject {
     return Number(card.rank)
   }
 
-  private isValidRummyMeld(cards: Card[]): boolean {
-    if (cards.length < 3) return false
-
-    const RANK_ORDER = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
-    const jokers = cards.filter(c => c.rank === 'JKR')
-    const nonJokers = cards.filter(c => c.rank !== 'JKR')
-
-    if (nonJokers.length === 0) return false
-
-    // Set: all non-jokers same rank, total ≤ 4 (one per suit)
-    const firstRank = nonJokers[0].rank
-    if (nonJokers.every(c => c.rank === firstRank)) {
-      return cards.length <= 4
-    }
-
-    // Run: all non-jokers same suit, consecutive (jokers fill gaps or extend ends)
-    const firstSuit = nonJokers[0].suit
-    if (!nonJokers.every(c => c.suit === firstSuit)) return false
-
-    const rankIndices = nonJokers.map(c => RANK_ORDER.indexOf(c.rank))
-    if (rankIndices.some(i => i === -1)) return false
-
-    rankIndices.sort((a, b) => a - b)
-
-    // No duplicate ranks in a run
-    for (let i = 1; i < rankIndices.length; i++) {
-      if (rankIndices[i] === rankIndices[i - 1]) return false
-    }
-
-    // The non-joker span must fit within the total card count
-    // (jokers fill internal gaps and/or extend at either end)
-    const span = rankIndices[rankIndices.length - 1] - rankIndices[0] + 1
-    return span <= cards.length
-  }
-
   private reshuffleRummyDiscard(gs: GameState): void {
     const discardZone = gs.zones.find(z => z.id === 'discard')
     if (!discardZone || discardZone.cards.length <= 1) return
 
-    const topCard = discardZone.cards[discardZone.cards.length - 1]
+    const topCard = discardZone.cards.at(-1)!
     const toReshuffle = discardZone.cards.slice(0, -1)
     discardZone.cards = [topCard]
 
     this.drawPile.push(...toReshuffle)
-    for (let i = this.drawPile.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
-    }
+    this.drawPile = shuffle(this.drawPile)
     gs.drawPileCount = this.drawPile.length
   }
 
@@ -2784,7 +2682,7 @@ export class RoomDO implements DurableObject {
     if (cardIdx === -1) return
 
     const card = handZone.cards[cardIdx]
-    const topCard = discardZone.cards[discardZone.cards.length - 1]
+    const topCard = discardZone.cards.at(-1)
     if (!topCard) return
 
     const effectiveSuit = gs.crazy8sDeclaredSuit ?? topCard.suit

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { GameState, ClientEvent, GameAction, Zone, Suit, BluffReveal, Player, Card as CardType } from '@playing-cards/shared'
-import { rankName } from '@playing-cards/shared'
+import { rankName, checkRummyGoOut } from '@playing-cards/shared'
+import { getPokerBlinds } from '@/lib/poker'
 import type { PeekResult } from '@/hooks/useRoom'
 import { Hand } from './Hand'
 import { Zone as ZoneView } from './Zone'
@@ -32,50 +33,6 @@ interface Props {
   errorMsg?: string | null
 }
 
-// ── Rummy go-out validation (mirrors server logic) ────────────
-const _RUMMY_RI: Record<string, number> = Object.fromEntries(
-  ['A','2','3','4','5','6','7','8','9','10','J','Q','K'].map((r, i) => [r, i])
-)
-function _isRummyMeld(cards: CardType[]): boolean {
-  if (cards.length < 3) return false
-  const nj = cards.filter(c => c.rank !== 'JKR')
-  if (nj.length === 0) return false
-  if (nj.every(c => c.rank === nj[0].rank)) return cards.length <= 4
-  if (!nj.every(c => c.suit === nj[0].suit)) return false
-  const idxs = nj.map(c => _RUMMY_RI[c.rank])
-  if (idxs.some(i => i === undefined)) return false
-  const s = [...idxs].sort((a, b) => a - b)
-  for (let i = 1; i < s.length; i++) if (s[i] === s[i - 1]) return false
-  return s[s.length - 1] - s[0] + 1 <= cards.length
-}
-function _isPureRun(cards: CardType[]): boolean {
-  if (cards.some(c => c.rank === 'JKR')) return false
-  if (cards.every(c => c.rank === cards[0].rank)) return false
-  return _isRummyMeld(cards)
-}
-function checkRummyGoOut(cards: CardType[]): 'ok' | 'cant-meld' | 'no-pure-run' {
-  let foundOk = false
-  let foundComplete = false
-  function bt(rem: CardType[], hasPureRun: boolean): void {
-    if (foundOk) return
-    if (rem.length === 0) { foundComplete = true; if (hasPureRun) foundOk = true; return }
-    if (rem.length < 3) return
-    const [anchor, ...others] = rem
-    const n = others.length
-    for (let mask = 0; mask < (1 << n); mask++) {
-      if (foundOk) return
-      const sub: CardType[] = []
-      for (let i = 0; i < n; i++) if (mask & (1 << i)) sub.push(others[i])
-      const meld = [anchor, ...sub]
-      if (meld.length < 3 || !_isRummyMeld(meld)) continue
-      bt(others.filter((_, i) => !(mask & (1 << i))), hasPureRun || _isPureRun(meld))
-    }
-  }
-  bt(cards, false)
-  if (foundOk) return 'ok'
-  if (foundComplete) return 'no-pure-run'
-  return 'cant-meld'
-}
 
 const SUIT_SYMBOL: Record<string, string> = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }
 const SUIT_OPTS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs']
@@ -139,15 +96,10 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId
   const gameType = gameState.gameType
 
-  const pokerBlinds = (() => {
-    if (gameType !== 'poker' || !gameState.pokerDealerPlayerId) return { sbId: null as string | null, bbId: null as string | null }
-    const sorted = [...gameState.players].sort((a, b) => a.seatIndex - b.seatIndex)
-    const di = sorted.findIndex(p => p.id === gameState.pokerDealerPlayerId)
-    if (di === -1 || sorted.length < 2) return { sbId: null, bbId: null }
-    const n = sorted.length
-    if (n === 2) return { sbId: sorted[di].id, bbId: sorted[(di + 1) % n].id }
-    return { sbId: sorted[(di + 1) % n].id, bbId: sorted[(di + 2) % n].id }
-  })()
+  const pokerBlinds = useMemo(
+    () => gameType === 'poker' ? getPokerBlinds(gameState) : { sbId: null as string | null, bbId: null as string | null },
+    [gameType, gameState.pokerDealerPlayerId, gameState.players] // eslint-disable-line react-hooks/exhaustive-deps
+  )
   const myHasPassed = gameState.bluffPassedPlayerIds.includes(myPlayerId)
   const presidentHasPassed = gameState.presidentPassedIds.includes(myPlayerId)
   const presidentHasFinished = gameState.presidentFinishOrder.includes(myPlayerId)
@@ -244,7 +196,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       const card = myHand?.cards.find(c => c.id === cardId)
       if (!card) return
       const discardZone = gs.zones.find(z => z.id === 'discard')
-      const topCard = discardZone?.cards[discardZone.cards.length - 1] ?? null
+      const topCard = discardZone?.cards.at(-1) ?? null
       if (topCard) {
         const effectiveSuit = gs.crazy8sDeclaredSuit ?? topCard.suit
         const canPlay = card.rank === '8' || card.rank === topCard.rank || card.suit === effectiveSuit
@@ -576,7 +528,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             {/* Bluff declaration history */}
             {gameType === 'bluff' && gameState.bluffHistory.length > 0 && (
               <BluffHistoryLog
-                last={gameState.bluffHistory[gameState.bluffHistory.length - 1]}
+                last={gameState.bluffHistory.at(-1)!}
                 players={gameState.players}
                 activeRank={gameState.bluffActiveRank}
               />
@@ -624,7 +576,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         // Compute playable card IDs for crazy-eights
         const c8sPlayableIds = gameType === 'crazy-eights' && isMyTurn ? (() => {
           const discardZone = gameState.zones.find(z => z.id === 'discard')
-          const topCard = discardZone?.cards[discardZone.cards.length - 1]
+          const topCard = discardZone?.cards.at(-1)
           if (!topCard) return undefined
           const effectiveSuit = gameState.crazy8sDeclaredSuit ?? topCard.suit
           const myHand = gameState.zones.find(z => z.id === `hand-${myPlayerId}`)
@@ -1353,7 +1305,7 @@ function cambioPowerLabel(rank: string, suit: string): string | null {
 
 function zonePosLabel(zoneId: string): string {
   const parts = zoneId.split('-')
-  const col = parseInt(parts[parts.length - 1])
+  const col = parseInt(parts.at(-1)!)
   const row = parseInt(parts[parts.length - 2])
   if (isNaN(row) || isNaN(col)) return 'card'
   const r = row === 0 ? 'top' : row === 1 ? 'bottom' : `row ${row + 1}`

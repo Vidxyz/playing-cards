@@ -2,34 +2,25 @@
 
 import type { GameState } from '@playing-cards/shared'
 import { DisconnectTimer } from './DisconnectTimer'
+import { getPokerBlinds } from '@/lib/poker'
 
 interface Props {
   gameState: GameState
   myPlayerId: string
 }
 
-function getPokerBlinds(gs: GameState): { sbId: string | null; bbId: string | null } {
-  if (gs.gameType !== 'poker' || !gs.pokerDealerPlayerId) return { sbId: null, bbId: null }
-  const sorted = [...gs.players].sort((a, b) => a.seatIndex - b.seatIndex)
-  const dealerIdx = sorted.findIndex(p => p.id === gs.pokerDealerPlayerId)
-  if (dealerIdx === -1 || sorted.length < 2) return { sbId: null, bbId: null }
-  const n = sorted.length
-  if (n === 2) return { sbId: sorted[dealerIdx].id, bbId: sorted[(dealerIdx + 1) % n].id }
-  return { sbId: sorted[(dealerIdx + 1) % n].id, bbId: sorted[(dealerIdx + 2) % n].id }
-}
-
 export function PlayerStrip({ gameState, myPlayerId }: Props) {
   const others = gameState.players.filter(p => p.id !== myPlayerId)
-  const pending = gameState.pendingPlayers ?? []
+  const pending = gameState.pendingPlayers
   if (others.length === 0 && pending.length === 0) return null
 
   const { turnOrder, currentTurnPlayerId } = gameState
-  const currentIdx = turnOrder.indexOf(currentTurnPlayerId ?? '')
-  const nextPlayerId = turnOrder.length > 1
+  const currentIdx = currentTurnPlayerId ? turnOrder.indexOf(currentTurnPlayerId) : -1
+  const nextPlayerId = currentIdx !== -1 && turnOrder.length > 1
     ? turnOrder[(currentIdx + 1) % turnOrder.length]
     : null
 
-  const { sbId, bbId } = getPokerBlinds(gameState)
+  const { sbId, bbId } = gameState.gameType === 'poker' ? getPokerBlinds(gameState) : { sbId: null, bbId: null }
 
   const renderPlayer = (player: typeof others[0]) => {
     const isCurrentTurn = currentTurnPlayerId === player.id
