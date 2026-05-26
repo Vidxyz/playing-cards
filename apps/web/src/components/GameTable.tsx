@@ -9,11 +9,12 @@ import { Zone as ZoneView } from './Zone'
 import { PlayerStrip } from './PlayerStrip'
 import { ScoreBoard } from './ScoreBoard'
 import { Card } from './Card'
-import { CambioTutorialModal, BluffTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal, GoFishTutorialModal } from './CambioTutorial'
 import { EuchreBoard } from './EuchreBoard'
 import { PresidentBoard } from './PresidentBoard'
 import { PokerBoard } from './PokerBoard'
 import { BlackjackBoard, bjHandValue, BJ_RESULT_LABEL, BJ_RESULT_COLOR, ChipSvg, ChipStack } from './BlackjackBoard'
+import { GoFishBoard } from './GoFishBoard'
 import { ThemeToggle } from './ThemeToggle'
 import { Toast } from './Toast'
 
@@ -38,9 +39,10 @@ const GAME_LABEL: Record<string, string> = {
   euchre: 'Euchre',
   cambio: 'Cambio',
   bluff: 'Bluff',
+  'go-fish': 'Go Fish',
 }
 // Games that manage their own round-over results screen
-const GAMES_WITH_OWN_RESULTS = new Set(['president', 'poker', 'blackjack'])
+const GAMES_WITH_OWN_RESULTS = new Set(['president', 'poker', 'blackjack', 'go-fish'])
 
 export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults, initialPeeks, clearInitialPeeks, onLeave, errorMsg }: Props) {
   const [showScores, setShowScores] = useState(false)
@@ -248,7 +250,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             <span className="text-xs font-semibold self-center mr-1" style={{ color: 'var(--text-muted)' }}>
               R{gameState.roundNumber}
             </span>
-            {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && gameType !== 'president' && gameType !== 'poker' && (
+            {gameType !== 'cambio' && gameType !== 'blackjack' && gameType !== 'euchre' && gameType !== 'president' && gameType !== 'poker' && gameType !== 'go-fish' && (
               <TopBtn
                 onClick={() => !myHasPassed && send({ type: 'pass_turn' })}
                 disabled={myHasPassed}
@@ -256,11 +258,11 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                 {gameType === 'bluff' && myHasPassed ? 'Passed' : 'Pass'}
               </TopBtn>
             )}
-            {(gameType === 'cambio' || gameType === 'bluff' || gameType === 'president' || gameType === 'blackjack' || gameType === 'poker') && (
+            {(gameType === 'cambio' || gameType === 'bluff' || gameType === 'president' || gameType === 'blackjack' || gameType === 'poker' || gameType === 'go-fish') && (
               <TopBtn onClick={() => setShowTutorialFor(gameType)}>?</TopBtn>
             )}
             <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
-            {isHost && gameType !== 'president' && gameType !== 'poker' && gameType !== 'blackjack' && (
+            {isHost && gameType !== 'president' && gameType !== 'poker' && gameType !== 'blackjack' && gameType !== 'go-fish' && (
               <TopBtn onClick={() => send({ type: 'next_round' })} accent>
                 Next Round
               </TopBtn>
@@ -274,8 +276,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       {/* ── Table (shared zones + draw pile) ─────────── */}
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-3 overflow-y-auto">
 
-        {/* Turn indicator — hidden for president/poker (they have their own displays) */}
-        {gameState.turnOrder.length > 0 && gameState.currentTurnPlayerId && gameType !== 'president' && gameType !== 'poker' && (
+        {/* Turn indicator — hidden for president/poker/go-fish (they have their own displays) */}
+        {gameState.turnOrder.length > 0 && gameState.currentTurnPlayerId && gameType !== 'president' && gameType !== 'poker' && gameType !== 'go-fish' && (
           <TurnBanner gameState={gameState} myPlayerId={myPlayerId} />
         )}
 
@@ -321,6 +323,13 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             isHost={isHost}
             drawPileCount={gameState.drawPileCount}
             send={send}
+          />
+        ) : gameType === 'go-fish' ? (
+          <GoFishBoard
+            gameState={gameState}
+            myPlayerId={myPlayerId}
+            send={send}
+            isHost={isHost}
           />
         ) : (
           <>
@@ -389,8 +398,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         )}
       </div>
 
-      {/* ── My hand (hidden for Cambio/Euchre/Poker) ── */}
-      {gameType !== 'cambio' && gameType !== 'euchre' && gameType !== 'poker' && (
+      {/* ── My hand (hidden for Cambio/Euchre/Poker/Go Fish) ── */}
+      {gameType !== 'cambio' && gameType !== 'euchre' && gameType !== 'poker' && gameType !== 'go-fish' && (
       <div className="flex-shrink-0 pb-safe" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
         {/* Your turn CTA — blackjack shows Hit/Stand/Split instead */}
         {gameType === 'blackjack' ? (() => {
@@ -643,6 +652,9 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       )}
       {showTutorialFor === 'poker' && (
         <PokerTutorialModal onClose={() => setShowTutorialFor(null)} />
+      )}
+      {showTutorialFor === 'go-fish' && (
+        <GoFishTutorialModal onClose={() => setShowTutorialFor(null)} />
       )}
 
       {gameState.bluffReveal && (

@@ -481,6 +481,68 @@ export function PokerTutorialModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+export function GoFishTutorialModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-3xl overflow-y-auto card-slide"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxHeight: '88vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 sticky top-0"
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>How to Play Go Fish</h2>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Collect sets of 4 — most books wins!</p>
+          </div>
+          <button onClick={onClose} className="text-sm px-3 py-1 rounded-full"
+            style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 pb-8 pt-4 flex flex-col gap-5">
+
+          <TutSection icon="🎯" title="Goal">
+            <p>Collect the most <strong>books</strong> — a book is all 4 cards of the same rank (e.g. all four 7s). The player with the most books when the game ends wins.</p>
+          </TutSection>
+
+          <TutSection icon="🃏" title="The Deal">
+            <p>With <strong>2 players</strong>, each player gets <strong>7 cards</strong>. With <strong>3 or more players</strong>, each player gets <strong>5 cards</strong>. The rest go face-down as the draw pile.</p>
+            <p className="mt-1.5">If you&apos;re dealt a complete set of 4 at the start, it&apos;s automatically booked for you.</p>
+          </TutSection>
+
+          <TutSection icon="🔄" title="On Your Turn">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Ask a player" desc="Pick any other player and name a rank you already hold in your hand. If they have any cards of that rank, they must give them all to you — and you ask again!" />
+              <Row label="Go Fish!" desc='If the player you asked has none of that rank, they say "Go Fish!" — you draw one card from the pile. If the drawn card matches what you asked for (lucky fish!), you ask again. Otherwise, your turn ends.' />
+            </div>
+          </TutSection>
+
+          <TutSection icon="📚" title="Books">
+            <p>When you collect all 4 cards of any rank, you immediately set them aside as a <strong>book</strong>. Books are shown face-up so everyone can see your score.</p>
+            <p className="mt-1.5">If completing a book empties your hand, you draw a card from the pile before play continues.</p>
+          </TutSection>
+
+          <TutSection icon="🏁" title="End of Game">
+            <p>The game ends when <strong>all 13 books have been made</strong>, or the draw pile runs out and all hands are empty (whichever comes first).</p>
+            <p className="mt-1.5">The player with the most books wins. Tied players share the victory.</p>
+          </TutSection>
+
+          <TutSection icon="💡" title="Strategy Tips">
+            <div className="flex flex-col gap-2 mt-1">
+              <Row label="Ask wisely" desc="You must already hold at least one card of the rank you ask for. Pay attention to what others ask — it reveals what ranks they're chasing." />
+              <Row label="Track the pile" desc="When the draw pile is small, remember which ranks are likely still in other hands." />
+              <Row label="Lucky fish" desc='Drawing the exact rank you asked for is called a "lucky fish" — you get to ask again even though no one gave you cards.' />
+            </div>
+          </TutSection>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TutSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (
     <div>

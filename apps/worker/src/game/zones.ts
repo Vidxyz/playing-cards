@@ -91,6 +91,22 @@ export const GAME_CONFIGS: Record<string, GameConfig> = {
     ],
   },
 
+  'go-fish': {
+    gameType: 'go-fish',
+    label: 'Go Fish',
+    description: 'Collect sets of 4 to make books. Ask players for ranks you hold.',
+    minPlayers: 2,
+    maxPlayers: 6,
+    deckFilter: {},
+    cardsPerPlayer: 5,
+    hasTeams: false,
+    hasTurnOrder: true,
+    zoneTemplates: [
+      { id: 'hand', name: 'Hand', visibility: 'owner-only', perPlayer: true, capacity: null },
+      { id: 'books', name: 'Books', visibility: 'face-up', perPlayer: true, capacity: null },
+    ],
+  },
+
   bluff: {
     gameType: 'bluff',
     label: 'Bluff',

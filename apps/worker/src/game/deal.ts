@@ -145,6 +145,19 @@ export function dealCards(
     return { zones: updatedZones, remaining: pile }
   }
 
+  if (config.gameType === 'go-fish') {
+    const count = players.length === 2 ? 7 : 5
+    for (const player of players) {
+      const handZone = updatedZones.find(z => z.id === `hand-${player.id}`)
+      if (handZone) {
+        for (let i = 0; i < count && pile.length > 0; i++) {
+          handZone.cards.push(pile.shift()!)
+        }
+      }
+    }
+    return { zones: updatedZones, remaining: pile }
+  }
+
   // president / bluff — deal all cards as evenly as possible
   const handZones = updatedZones.filter(z => z.ownerId !== null && z.id.startsWith('hand-'))
   let i = 0

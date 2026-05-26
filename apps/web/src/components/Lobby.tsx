@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import type { GameState, GameType, ClientEvent } from '@playing-cards/shared'
-import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal } from './CambioTutorial'
+import { CambioTutorialModal, BluffTutorialModal, EuchreTutorialModal, PresidentTutorialModal, BlackjackTutorialModal, PokerTutorialModal, GoFishTutorialModal } from './CambioTutorial'
 
 const GAMES: {
   type: GameType; label: string; desc: string; icon: string; min: number; max: number; comingSoon?: boolean
@@ -13,6 +13,7 @@ const GAMES: {
   { type: 'blackjack', label: 'Blackjack',  icon: '21', desc: 'Beat the dealer to 21',             min: 2, max: 7 },
   { type: 'euchre',    label: 'Euchre',     icon: '🤝', desc: '2v2 trick-taking',                  min: 4, max: 4 },
   { type: 'cambio',    label: 'Cambio',     icon: '🔄', desc: 'Lowest total wins — swap & peek',   min: 2, max: 6 },
+  { type: 'go-fish',   label: 'Go Fish',    icon: '🐟', desc: 'Collect books of 4 — ask & fish',   min: 2, max: 6 },
 ]
 
 interface Props {
@@ -28,6 +29,7 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
   const [showPresidentTutorial, setShowPresidentTutorial] = useState(false)
   const [showBlackjackTutorial, setShowBlackjackTutorial] = useState(false)
   const [showPokerTutorial, setShowPokerTutorial] = useState(false)
+  const [showGoFishTutorial, setShowGoFishTutorial] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
 
@@ -99,12 +101,27 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
                   )}
                 </div>
               </div>
-              <div>
+              <div className="flex items-center gap-2">
                 {!player.isConnected && (
                   <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>offline</span>
                 )}
                 {player.isReady && !player.isHost && (
                   <span className="text-green-400 text-sm font-bold">✓</span>
+                )}
+                {isHost && !player.isHost && (
+                  <button
+                    onClick={() => send({ type: 'kick_player', playerId: player.id })}
+                    className="flex items-center justify-center rounded-full text-xs font-bold transition-all active:scale-90"
+                    style={{
+                      width: 22, height: 22,
+                      background: 'rgba(239,68,68,0.12)',
+                      color: '#f87171',
+                      border: '1px solid rgba(239,68,68,0.25)',
+                    }}
+                    title="Remove player"
+                  >
+                    ×
+                  </button>
                 )}
               </div>
             </div>
@@ -248,6 +265,20 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
           >
             <span>📖</span>
             How to play Poker
+          </button>
+        </div>
+      )}
+
+      {/* Go Fish — how to play (visible to all players) */}
+      {selectedGame === 'go-fish' && (
+        <div className="px-4 mb-4">
+          <button
+            onClick={() => setShowGoFishTutorial(true)}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 flex items-center justify-center gap-2"
+            style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+          >
+            <span>📖</span>
+            How to play Go Fish
           </button>
         </div>
       )}
@@ -467,6 +498,10 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
 
       {showPokerTutorial && (
         <PokerTutorialModal onClose={() => setShowPokerTutorial(false)} />
+      )}
+
+      {showGoFishTutorial && (
+        <GoFishTutorialModal onClose={() => setShowGoFishTutorial(false)} />
       )}
 
       {/* Action */}

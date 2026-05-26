@@ -15,6 +15,7 @@ export type ClientEvent =
   | { type: 'pass_turn' }
   | { type: 'next_round' }
   | { type: 'end_game' }
+  | { type: 'kick_player'; playerId: string }
   | { type: 'set_trump'; suit: Suit }
   | { type: 'fold' }
   | { type: 'peek_card'; cardId: string; zoneId: string }
@@ -43,6 +44,8 @@ export type ClientEvent =
   | { type: 'poker_call' }
   | { type: 'poker_bet'; amount: number }
   | { type: 'poker_all_in' }
+  // Go Fish-specific
+  | { type: 'gofish_ask'; targetPlayerId: string; rank: string }
   // Euchre-specific
   | { type: 'euchre_order_up'; goAlone?: boolean }
   | { type: 'euchre_pass' }

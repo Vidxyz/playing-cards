@@ -96,6 +96,8 @@ function makeInitialState(roomCode: string, hostId = ''): GameState {
     pokerActedThisRound: [],
     pokerAllIn: [],
     pokerWinners: null,
+    goFishBooks: {},
+    goFishLastAsk: null,
   }
 }
 
@@ -326,6 +328,18 @@ export class RoomDO implements DurableObject {
 
     } else if (gs.gameType === 'poker') {
       player.isFolded = true
+    } else if (gs.gameType === 'go-fish') {
+      // Return disconnected player's cards to the draw pile and reshuffle
+      const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+      if (handZone && handZone.cards.length > 0) {
+        this.drawPile.push(...handZone.cards)
+        handZone.cards = []
+        for (let i = this.drawPile.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]]
+        }
+        gs.drawPileCount = this.drawPile.length
+      }
     }
   }
 
@@ -478,6 +492,13 @@ export class RoomDO implements DurableObject {
         await this.handleNextRound(gs)
         return
 
+      case 'kick_player':
+        if (!player.isHost) return
+        if (gs.phase !== 'lobby') return
+        if (event.playerId === playerId) return
+        await this.handleKickPlayer(gs, event.playerId)
+        return
+
       case 'end_game':
         if (!player.isHost) return
         await this.broadcast({ type: 'kicked', reason: 'Game ended by host' }, null)
@@ -544,6 +565,11 @@ export class RoomDO implements DurableObject {
       case 'poker_all_in':
         if (gs.gameType !== 'poker' || gs.currentTurnPlayerId !== playerId) return
         await this.handlePokerAllIn(gs, player)
+        return
+
+      case 'gofish_ask':
+        if (gs.gameType !== 'go-fish' || gs.currentTurnPlayerId !== playerId) return
+        await this.handleGoFishAsk(gs, player, event.targetPlayerId, event.rank)
         return
 
       case 'euchre_order_up':
@@ -940,6 +966,25 @@ export class RoomDO implements DurableObject {
       const order = biddingOrder(gs.players, dealerId)
       gs.turnOrder = order
       gs.currentTurnPlayerId = order[0]
+      gs.roundNumber++
+      gs.phase = 'playing'
+      gs.lastAction = { type: 'deal', playerId: gs.hostId, timestamp: Date.now() }
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
+
+    // Go Fish: initialize books, pick random first player
+    if (gs.gameType === 'go-fish') {
+      gs.goFishBooks = {}
+      gs.goFishLastAsk = null
+      for (const p of gs.players) gs.goFishBooks[p.id] = []
+      const randomIdx = Math.floor(Math.random() * gs.turnOrder.length)
+      gs.currentTurnPlayerId = gs.turnOrder[randomIdx]
+      // Check if any player was dealt a book immediately
+      for (const p of gs.players) {
+        this.goFishCheckBooks(gs, p.id)
+      }
       gs.roundNumber++
       gs.phase = 'playing'
       gs.lastAction = { type: 'deal', playerId: gs.hostId, timestamp: Date.now() }
@@ -1410,6 +1455,14 @@ export class RoomDO implements DurableObject {
       return
     }
 
+    // Go Fish: redeal for another game
+    if (gs.gameType === 'go-fish') {
+      gs.goFishBooks = {}
+      gs.goFishLastAsk = null
+      await this.handleDeal(gs)
+      return
+    }
+
     // Euchre: reset bidding state, check for game over (10 pts), then redeal
     if (gs.gameType === 'euchre') {
       gs.euchrePhase = null
@@ -1450,6 +1503,28 @@ export class RoomDO implements DurableObject {
     for (const player of gs.players) {
       player.isReady = false
     }
+
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+  }
+
+  private async handleKickPlayer(gs: GameState, targetPlayerId: string): Promise<void> {
+    const target = gs.players.find(p => p.id === targetPlayerId)
+    if (!target) return
+
+    // Cancel any pending leave timer for this player
+    this.cancelLeaveTimer(targetPlayerId)
+
+    // Tell the kicked player they've been removed
+    const targetSession = this.sessions.get(targetPlayerId)
+    if (targetSession) {
+      this.sendTo(targetSession.ws, { type: 'kicked', reason: 'You were removed from the room by the host' })
+      this.sessions.delete(targetPlayerId)
+    }
+
+    // Remove from game state
+    gs.players = gs.players.filter(p => p.id !== targetPlayerId)
+    gs.players.forEach((p, i) => { p.seatIndex = i })
 
     await this.saveState(gs)
     await this.broadcastState(gs)
@@ -2055,6 +2130,147 @@ export class RoomDO implements DurableObject {
   }
 
   // ── End President handlers ────────────────────────────────────
+
+  // ── Go Fish handlers ─────────────────────────────────────────
+
+  private async handleGoFishAsk(gs: GameState, asker: Player, targetPlayerId: string, rank: string): Promise<void> {
+    // Validate asker holds at least one card of the requested rank
+    const askerHand = gs.zones.find(z => z.id === `hand-${asker.id}`)
+    if (!askerHand || !askerHand.cards.some(c => c.rank === rank)) return
+
+    const targetPlayer = gs.players.find(p => p.id === targetPlayerId)
+    if (!targetPlayer || targetPlayerId === asker.id) return
+
+    const targetHand = gs.zones.find(z => z.id === `hand-${targetPlayerId}`)
+    if (!targetHand) return
+
+    const matchingCards = targetHand.cards.filter(c => c.rank === rank)
+    const success = matchingCards.length > 0
+    let luckyFish = false
+
+    if (success) {
+      // Transfer all matching cards from target to asker
+      for (const card of matchingCards) {
+        const idx = targetHand.cards.findIndex(c => c.id === card.id)
+        if (idx !== -1) {
+          targetHand.cards.splice(idx, 1)
+          askerHand.cards.push(card)
+        }
+      }
+    } else {
+      // Go Fish: draw from pile
+      if (this.drawPile.length > 0) {
+        const drawn = this.drawPile.shift()!
+        gs.drawPileCount = this.drawPile.length
+        askerHand.cards.push(drawn)
+        luckyFish = drawn.rank === rank
+      }
+    }
+
+    gs.goFishLastAsk = { askerId: asker.id, targetId: targetPlayerId, rank, success, luckyFish }
+
+    // Check if asker formed any books after receiving cards
+    this.goFishCheckBooks(gs, asker.id)
+
+    // If target now has empty hand, draw 1 card
+    if (targetHand.cards.length === 0 && this.drawPile.length > 0) {
+      const drawn = this.drawPile.shift()!
+      gs.drawPileCount = this.drawPile.length
+      targetHand.cards.push(drawn)
+      this.goFishCheckBooks(gs, targetPlayerId)
+    }
+
+    // Check game over
+    if (this.goFishIsGameOver(gs)) {
+      for (const p of gs.players) {
+        p.roundScore = gs.goFishBooks[p.id]?.length ?? 0
+      }
+      gs.phase = 'round-over'
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
+
+    // Keep turn if success or lucky fish; otherwise advance
+    if (!success && !luckyFish) {
+      this.advanceTurnGoFish(gs)
+    }
+    // If asker now has empty hand, draw a card so they can continue
+    else if (askerHand.cards.length === 0 && this.drawPile.length > 0) {
+      const drawn = this.drawPile.shift()!
+      gs.drawPileCount = this.drawPile.length
+      askerHand.cards.push(drawn)
+      this.goFishCheckBooks(gs, asker.id)
+    }
+
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+  }
+
+  private goFishCheckBooks(gs: GameState, playerId: string): void {
+    const handZone = gs.zones.find(z => z.id === `hand-${playerId}`)
+    const booksZone = gs.zones.find(z => z.id === `books-${playerId}`)
+    if (!handZone || !booksZone) return
+
+    const rankCounts: Record<string, number> = {}
+    for (const card of handZone.cards) {
+      rankCounts[card.rank] = (rankCounts[card.rank] ?? 0) + 1
+    }
+
+    for (const [rank, count] of Object.entries(rankCounts)) {
+      if (count >= 4) {
+        // Remove all 4 from hand and place in books zone
+        const bookCards: typeof handZone.cards = []
+        let remaining = 4
+        handZone.cards = handZone.cards.filter(c => {
+          if (c.rank === rank && remaining > 0) {
+            bookCards.push(c)
+            remaining--
+            return false
+          }
+          return true
+        })
+        booksZone.cards.push(...bookCards)
+        if (!gs.goFishBooks[playerId]) gs.goFishBooks[playerId] = []
+        gs.goFishBooks[playerId].push(rank)
+      }
+    }
+  }
+
+  private goFishIsGameOver(gs: GameState): boolean {
+    const totalBooks = Object.values(gs.goFishBooks).reduce((sum, b) => sum + b.length, 0)
+    if (totalBooks >= 13) return true
+    if (this.drawPile.length > 0) return false
+    return gs.players.every(p => {
+      const hand = gs.zones.find(z => z.id === `hand-${p.id}`)
+      return !hand || hand.cards.length === 0
+    })
+  }
+
+  private advanceTurnGoFish(gs: GameState): void {
+    if (gs.turnOrder.length === 0) return
+    let idx = gs.turnOrder.indexOf(gs.currentTurnPlayerId ?? '')
+    for (let i = 0; i < gs.turnOrder.length; i++) {
+      idx = (idx + 1) % gs.turnOrder.length
+      const nextId = gs.turnOrder[idx]
+      const nextHand = gs.zones.find(z => z.id === `hand-${nextId}`)
+      // Skip players with no cards AND no draw pile to refill from
+      if (nextHand && (nextHand.cards.length > 0 || this.drawPile.length > 0)) {
+        // If their hand is empty, draw one before it becomes their turn
+        if (nextHand.cards.length === 0 && this.drawPile.length > 0) {
+          const drawn = this.drawPile.shift()!
+          gs.drawPileCount = this.drawPile.length
+          nextHand.cards.push(drawn)
+          this.goFishCheckBooks(gs, nextId)
+        }
+        gs.currentTurnPlayerId = nextId
+        return
+      }
+    }
+    gs.currentTurnPlayerId = null
+  }
+
+  // ── End Go Fish handlers ──────────────────────────────────────
 
   // ── Standard helpers ──────────────────────────────────────────
 

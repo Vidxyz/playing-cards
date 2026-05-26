@@ -48,7 +48,7 @@ export interface Team {
 
 export type GamePhase = 'lobby' | 'dealing' | 'playing' | 'round-over' | 'game-over'
 
-export type GameType = 'president' | 'blackjack' | 'poker' | 'euchre' | 'cambio' | 'bluff'
+export type GameType = 'president' | 'blackjack' | 'poker' | 'euchre' | 'cambio' | 'bluff' | 'go-fish'
 
 export interface BluffReveal {
   cards: Card[]           // actual card values — visible to all during resolution
@@ -128,6 +128,9 @@ export interface GameState {
     receivedCardIds: string[]  // cards they received (for animation)
     giverRole: string      // 'bum' | 'vb' — label for display
   }[] | null
+  // Go Fish-specific
+  goFishBooks: Record<string, string[]>
+  goFishLastAsk: { askerId: string; targetId: string; rank: string; success: boolean; luckyFish: boolean } | null
   // Poker-specific
   pokerStartingChips: number
   pokerSmallBlind: number
