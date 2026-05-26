@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import type { GameState, ClientEvent, Rank } from '@playing-cards/shared'
+import { useState, useEffect, useRef } from 'react'
+import type { GameState, ClientEvent, Rank, Card as CardType } from '@playing-cards/shared'
+import { Card } from './Card'
 
 interface Props {
   gameState: GameState
@@ -10,6 +11,7 @@ interface Props {
   isHost: boolean
 }
 
+const RANK_ORDER: Rank[] = ['2','3','4','5','6','7','8','9','10','J','Q','K','A']
 const RANK_LABEL: Record<string, string> = {
   '2': '2', '3': '3', '4': '4', '5': '5', '6': '6', '7': '7',
   '8': '8', '9': '9', '10': '10', 'J': 'J', 'Q': 'Q', 'K': 'K', 'A': 'A',
@@ -18,21 +20,45 @@ const RANK_LABEL: Record<string, string> = {
 export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null)
   const [selectedRank, setSelectedRank] = useState<string | null>(null)
+  const [newBookFlash, setNewBookFlash] = useState(false)
 
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId
-  const me = gameState.players.find(p => p.id === myPlayerId)
 
   const myHand = gameState.zones.find(z => z.id === `hand-${myPlayerId}`)
-  const myBooks = gameState.zones.find(z => z.id === `books-${myPlayerId}`)
-
-  // Ranks in my hand (unique, sorted by RANK_LABEL order)
-  const RANK_ORDER: Rank[] = ['2','3','4','5','6','7','8','9','10','J','Q','K','A']
-  const myHandRanks = [...new Set((myHand?.cards ?? []).map(c => c.rank as Rank))]
+  const myCards = myHand?.cards ?? []
+  const sortedCards = [...myCards].sort(
+    (a, b) => RANK_ORDER.indexOf(a.rank as Rank) - RANK_ORDER.indexOf(b.rank as Rank)
+  )
+  const myHandRanks = [...new Set(myCards.map(c => c.rank as Rank))]
     .sort((a, b) => RANK_ORDER.indexOf(a) - RANK_ORDER.indexOf(b))
 
   const otherPlayers = gameState.players.filter(p => p.id !== myPlayerId)
+  const currentTurnPlayer = gameState.players.find(p => p.id === gameState.currentTurnPlayerId)
 
-  const canAsk = isMyTurn && selectedTarget !== null && selectedRank !== null && myHandRanks.includes(selectedRank as Rank)
+  const canAsk = isMyTurn
+    && selectedTarget !== null
+    && selectedRank !== null
+    && myHandRanks.includes(selectedRank as Rank)
+
+  // Flash my books section whenever I complete a new book
+  const myBookCount = gameState.goFishBooks[myPlayerId]?.length ?? 0
+  const prevMyBookCount = useRef(myBookCount)
+  useEffect(() => {
+    if (myBookCount > prevMyBookCount.current) {
+      setNewBookFlash(true)
+      const t = setTimeout(() => setNewBookFlash(false), 700)
+      prevMyBookCount.current = myBookCount
+      return () => clearTimeout(t)
+    }
+    prevMyBookCount.current = myBookCount
+  }, [myBookCount])
+
+  // Clear selected rank if we no longer hold it (e.g. after a successful ask takes all copies)
+  useEffect(() => {
+    if (selectedRank && !myHandRanks.includes(selectedRank as Rank)) {
+      setSelectedRank(null)
+    }
+  }, [myHandRanks, selectedRank])
 
   const handleAsk = () => {
     if (!canAsk || !selectedTarget || !selectedRank) return
@@ -47,92 +73,97 @@ export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
     const zone = gameState.zones.find(z => z.id === `hand-${pid}`)
     return zone?.cards.filter(c => !c.id.startsWith('hidden_')).length ?? zone?.cards.length ?? 0
   }
-
   const getBookCount = (pid: string) => gameState.goFishBooks[pid]?.length ?? 0
-  const getBookRanks = (pid: string) => gameState.goFishBooks[pid] ?? []
-
-  const currentTurnPlayer = gameState.players.find(p => p.id === gameState.currentTurnPlayerId)
+  const getBookRanks = (pid: string): string[] => gameState.goFishBooks[pid] ?? []
 
   return (
-    <div className="w-full flex flex-col gap-3">
+    <div className="w-full flex flex-col gap-3 pb-3">
 
-      {/* ── Turn indicator ───────────────────────────── */}
+      {/* ── Turn indicator ── */}
       {gameState.phase === 'playing' && gameState.currentTurnPlayerId && (
         <div
-          className="mx-auto px-4 py-2 rounded-full text-sm font-bold"
+          className={`mx-auto px-4 py-2 rounded-full text-sm font-bold ${isMyTurn ? 'turn-pulse' : ''}`}
           style={isMyTurn
             ? { background: 'var(--accent)', color: '#000' }
             : { background: 'var(--surface-hi)', color: 'var(--text-muted)', border: '1px solid var(--border-hi)' }
           }
         >
-          {isMyTurn ? 'Your turn — ask a player!' : `${currentTurnPlayer?.name ?? '?'}'s turn`}
+          {isMyTurn ? '🎣 Your turn!' : `${currentTurnPlayer?.name ?? '?'}'s turn`}
         </div>
       )}
 
-      {/* ── Last ask result ──────────────────────────── */}
+      {/* ── Last ask result ── */}
       {lastAsk && (
-        <LastAskBanner lastAsk={lastAsk} players={gameState.players} myPlayerId={myPlayerId} />
+        <LastAskBanner
+          key={`${lastAsk.askerId}-${lastAsk.targetId}-${lastAsk.rank}-${String(lastAsk.success)}-${String(lastAsk.luckyFish)}`}
+          lastAsk={lastAsk}
+          players={gameState.players}
+          myPlayerId={myPlayerId}
+        />
       )}
 
-      {/* ── Other players ───────────────────────────── */}
-      <div className="flex flex-wrap gap-2 justify-center">
+      {/* ── Other players row (scrollable) ── */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar px-1 pb-1">
         {otherPlayers.map(p => {
           const handCount = getHandCount(p.id)
           const bookCount = getBookCount(p.id)
           const bookRanks = getBookRanks(p.id)
           const isSelected = selectedTarget === p.id
           const isCurrent = gameState.currentTurnPlayerId === p.id
-          const isConnected = p.isConnected
 
           return (
             <button
               key={p.id}
               onClick={() => isMyTurn && setSelectedTarget(isSelected ? null : p.id)}
-              className="flex flex-col items-center gap-1.5 px-4 py-3 rounded-2xl transition-all active:scale-95"
+              className="flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-2xl transition-all active:scale-95 flex-shrink-0"
               style={{
-                background: isSelected
-                  ? 'var(--accent-dim)'
-                  : 'var(--surface-hi)',
+                background: isSelected ? 'var(--accent-dim)' : 'var(--surface-hi)',
                 border: isSelected
                   ? '2px solid var(--accent)'
                   : isCurrent
-                    ? '2px solid rgba(255,255,255,0.25)'
+                    ? '2px solid rgba(255,255,255,0.2)'
                     : '1px solid var(--border-hi)',
-                opacity: isConnected ? 1 : 0.5,
+                opacity: p.isConnected ? 1 : 0.5,
                 cursor: isMyTurn ? 'pointer' : 'default',
-                minWidth: 100,
+                minWidth: 88,
               }}
             >
               <div className="flex items-center gap-1.5">
                 <div
                   className="flex items-center justify-center rounded-full text-[10px] font-black flex-shrink-0"
-                  style={{ width: 24, height: 24, background: isCurrent ? 'var(--accent)' : 'var(--surface-mid)', color: isCurrent ? '#000' : 'var(--text-muted)' }}
+                  style={{
+                    width: 22, height: 22,
+                    background: isCurrent ? 'var(--accent)' : 'var(--surface-mid)',
+                    color: isCurrent ? '#000' : 'var(--text-muted)',
+                  }}
                 >
                   {p.name.slice(0, 2).toUpperCase()}
                 </div>
-                <span className="text-xs font-bold truncate max-w-[80px]" style={{ color: 'var(--text)' }}>
+                <span className="text-xs font-bold truncate max-w-[72px]" style={{ color: 'var(--text)' }}>
                   {p.name}
                 </span>
-                {!isConnected && <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>●</span>}
+                {!p.isConnected && <span style={{ color: 'var(--text-dim)', fontSize: 8 }}>●</span>}
               </div>
 
               <div className="flex items-center gap-2">
                 <div className="flex flex-col items-center">
-                  <span className="text-base font-black" style={{ color: 'var(--text)' }}>{handCount}</span>
+                  <span className="text-sm font-black" style={{ color: 'var(--text)' }}>{handCount}</span>
                   <span className="text-[8px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>cards</span>
                 </div>
-                <div className="w-px h-6" style={{ background: 'var(--border)' }} />
+                <div className="w-px h-5" style={{ background: 'var(--border)' }} />
                 <div className="flex flex-col items-center">
-                  <span className="text-base font-black" style={{ color: bookCount > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{bookCount}</span>
+                  <span className="text-sm font-black" style={{ color: bookCount > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>
+                    {bookCount}
+                  </span>
                   <span className="text-[8px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>books</span>
                 </div>
               </div>
 
               {bookRanks.length > 0 && (
                 <div className="flex flex-wrap gap-0.5 justify-center">
-                  {bookRanks.map((r: string) => (
-                    <span key={r} className="text-[9px] font-bold px-1 py-0.5 rounded"
-                      style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                  {bookRanks.map(r => (
+                    <span key={r} className="text-[8px] font-bold px-1 py-0.5 rounded"
+                      style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.25)' }}>
                       {RANK_LABEL[r] ?? r}
                     </span>
                   ))}
@@ -140,109 +171,107 @@ export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
               )}
 
               {isSelected && (
-                <span className="text-[10px] font-bold" style={{ color: 'var(--accent)' }}>Selected ✓</span>
+                <span className="text-[9px] font-bold fade-in" style={{ color: 'var(--accent)' }}>Selected ✓</span>
               )}
             </button>
           )
         })}
       </div>
 
-      {/* ── Draw pile ───────────────────────────────── */}
-      <div className="flex items-center justify-center gap-2">
+      {/* ── Draw pile ── */}
+      <div className="flex items-center justify-center gap-3">
         <div className="flex flex-col items-center gap-1">
-          <div className="relative" style={{ width: 56, height: 80 }}>
+          <div className="relative" style={{ width: 52, height: 74 }}>
             <div style={{
-              position: 'absolute', top: -2, left: -2, width: 56, height: 80,
+              position: 'absolute', top: -2, left: -2, width: 52, height: 74,
               borderRadius: 'var(--radius-card)',
               background: 'linear-gradient(145deg,#1a2d54,#1e3560)',
               border: '1px solid rgba(255,255,255,0.06)',
             }} />
             <div style={{
-              position: 'absolute', top: 0, left: 0, width: 56, height: 80,
+              position: 'absolute', top: 0, left: 0, width: 52, height: 74,
               borderRadius: 'var(--radius-card)',
               background: 'linear-gradient(145deg,#243f72,#1e3560)',
               border: '1px solid rgba(255,255,255,0.12)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: 700 }}>
+              <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: 700 }}>
                 {gameState.drawPileCount}
               </span>
             </div>
           </div>
           <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>draw pile</span>
         </div>
+        {!isMyTurn && gameState.phase === 'playing' && currentTurnPlayer && (
+          <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
+            Waiting for {currentTurnPlayer.name}…
+          </span>
+        )}
       </div>
 
-      {/* ── Ask controls (only on my turn) ──────────── */}
-      {isMyTurn && gameState.phase === 'playing' && (
-        <div className="flex flex-col gap-2 px-2">
-          {/* Step 1: target */}
-          {!selectedTarget && (
-            <div className="text-center text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-              Step 1: tap a player above to ask them
-            </div>
+      {/* ── My hand ── */}
+      <div style={{ borderTop: '1px solid var(--border)' }}>
+        <div className="flex items-center justify-between px-4 pt-2 pb-1">
+          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--text-dim)' }}>
+            Your hand ({myCards.length})
+          </span>
+          {selectedRank && (
+            <button
+              onClick={() => setSelectedRank(null)}
+              className="text-[10px] px-2 py-0.5 rounded-full"
+              style={{ color: 'var(--text-dim)', background: 'var(--surface-mid)', border: '1px solid var(--border)' }}
+            >
+              Clear ✕
+            </button>
           )}
-          {selectedTarget && (
-            <div className="text-center text-xs font-semibold" style={{ color: 'var(--accent)' }}>
-              Asking {gameState.players.find(p => p.id === selectedTarget)?.name ?? '?'}
-              {!selectedRank && ' — now pick a rank below'}
-            </div>
-          )}
-
-          {/* Rank picker */}
-          {myHandRanks.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 justify-center">
-              {myHandRanks.map(rank => (
-                <button
-                  key={rank}
-                  onClick={() => setSelectedRank(selectedRank === rank ? null : rank)}
-                  className="font-bold text-sm transition-all active:scale-95 rounded-xl"
-                  style={{
-                    minWidth: 40, height: 40,
-                    background: selectedRank === rank ? 'var(--accent)' : 'var(--surface-hi)',
-                    color: selectedRank === rank ? '#000' : 'var(--text)',
-                    border: selectedRank === rank ? '2px solid var(--accent-hi)' : '1px solid var(--border-hi)',
-                  }}
-                >
-                  {RANK_LABEL[rank] ?? rank}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {myHandRanks.length === 0 && (
-            <div className="text-center text-xs" style={{ color: 'var(--text-dim)' }}>
-              Waiting for cards to ask with…
-            </div>
-          )}
-
-          {/* Ask button */}
-          <button
-            onClick={handleAsk}
-            disabled={!canAsk}
-            className="w-full py-3 rounded-2xl font-black text-sm tracking-widest uppercase transition-all active:scale-95"
-            style={canAsk
-              ? { background: 'var(--accent)', color: '#000', boxShadow: '0 0 16px rgba(245,158,11,0.3)' }
-              : { background: 'var(--surface-mid)', color: 'var(--text-dim)', border: '1px solid var(--border)', cursor: 'not-allowed' }
-            }
-          >
-            {canAsk
-              ? `Ask ${gameState.players.find(p => p.id === selectedTarget)?.name ?? '?'} for ${RANK_LABEL[selectedRank!] ?? selectedRank}s`
-              : 'Ask!'
-            }
-          </button>
         </div>
-      )}
 
-      {/* ── My books ────────────────────────────────── */}
-      {myBooks && myBooks.cards.length > 0 && (
-        <div className="flex flex-col gap-1 px-2">
+        <GoFishHand
+          cards={sortedCards}
+          selectedRank={selectedRank}
+          onSelectRank={rank => {
+            if (!isMyTurn) return
+            setSelectedRank(prev => prev === rank ? null : rank)
+          }}
+          isMyTurn={isMyTurn}
+        />
+
+        {/* Ask controls */}
+        {isMyTurn && gameState.phase === 'playing' && (
+          <div className="px-4 pb-2 flex flex-col gap-2">
+            <p className="text-center text-xs fade-in" style={{ color: selectedRank && selectedTarget ? 'var(--accent)' : 'var(--text-dim)' }}>
+              {!selectedRank && !selectedTarget && 'Tap a card to pick a rank, then tap a player'}
+              {selectedRank && !selectedTarget && `Asking for ${RANK_LABEL[selectedRank]}s — tap a player above`}
+              {!selectedRank && selectedTarget && `Asking ${otherPlayers.find(p => p.id === selectedTarget)?.name} — tap a card to pick rank`}
+              {selectedRank && selectedTarget && `Ready! Ask for ${RANK_LABEL[selectedRank]}s`}
+            </p>
+            <button
+              onClick={handleAsk}
+              disabled={!canAsk}
+              className="w-full py-3 rounded-2xl font-black text-sm tracking-widest uppercase transition-all active:scale-95"
+              style={canAsk
+                ? { background: 'var(--accent)', color: '#000', boxShadow: '0 0 16px rgba(245,158,11,0.3)' }
+                : { background: 'var(--surface-mid)', color: 'var(--text-dim)', border: '1px solid var(--border)', cursor: 'not-allowed' }
+              }
+            >
+              {canAsk
+                ? `Ask ${gameState.players.find(p => p.id === selectedTarget)?.name} for ${RANK_LABEL[selectedRank!] ?? selectedRank}s`
+                : 'Ask!'
+              }
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── My books ── */}
+      {getBookRanks(myPlayerId).length > 0 && (
+        <div className={`flex flex-col gap-1 px-4 ${newBookFlash ? 'book-pop' : ''}`}>
           <div className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--text-dim)' }}>
-            My books ({getBookCount(myPlayerId)})
+            My books ({getBookCount(myPlayerId)}) 📚
           </div>
           <div className="flex flex-wrap gap-1">
-            {getBookRanks(myPlayerId).map((r: string) => (
-              <span key={r} className="text-xs font-bold px-2 py-1 rounded-lg"
+            {getBookRanks(myPlayerId).map(r => (
+              <span key={r} className="text-xs font-bold px-2.5 py-1 rounded-lg"
                 style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
                 {RANK_LABEL[r] ?? r}s
               </span>
@@ -251,21 +280,26 @@ export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
         </div>
       )}
 
-      {/* ── Round over ──────────────────────────────── */}
+      {/* ── Round over leaderboard ── */}
       {gameState.phase === 'round-over' && (
-        <div className="flex flex-col gap-2 px-2">
-          <div className="text-center text-sm font-black tracking-widest uppercase" style={{ color: 'var(--accent)' }}>
-            Game Over!
+        <div className="flex flex-col gap-2 px-4 pb-2">
+          <div className="text-center text-sm font-black tracking-widest uppercase fade-in" style={{ color: 'var(--accent)' }}>
+            🎉 Game Over!
           </div>
           <div className="flex flex-col gap-1">
             {[...gameState.players]
-              .sort((a, b) => (getBookCount(b.id)) - (getBookCount(a.id)))
+              .sort((a, b) => getBookCount(b.id) - getBookCount(a.id))
               .map((p, i) => (
-                <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-xl"
-                  style={{ background: i === 0 ? 'var(--accent-dim)' : 'var(--surface-hi)', border: `1px solid ${i === 0 ? 'rgba(245,158,11,0.3)' : 'var(--border-hi)'}` }}>
+                <div key={p.id}
+                  className={`flex items-center justify-between px-3 py-2 rounded-xl ${i === 0 ? 'book-pop' : ''}`}
+                  style={{
+                    background: i === 0 ? 'var(--accent-dim)' : 'var(--surface-hi)',
+                    border: `1px solid ${i === 0 ? 'rgba(245,158,11,0.3)' : 'var(--border-hi)'}`,
+                  }}
+                >
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold" style={{ color: i === 0 ? 'var(--accent)' : 'var(--text-dim)' }}>
-                      #{i + 1}
+                      {i === 0 ? '🏆' : `#${i + 1}`}
                     </span>
                     <span className="text-sm font-bold" style={{ color: p.id === myPlayerId ? 'var(--accent)' : 'var(--text)' }}>
                       {p.name}{p.id === myPlayerId ? ' (you)' : ''}
@@ -293,6 +327,87 @@ export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
   )
 }
 
+// ── Hand card display with rank-based selection ──────────────────
+
+function GoFishHand({
+  cards,
+  selectedRank,
+  onSelectRank,
+  isMyTurn,
+}: {
+  cards: CardType[]
+  selectedRank: string | null
+  onSelectRank: (rank: string) => void
+  isMyTurn: boolean
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(320)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => setContainerWidth(entries[0].contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  if (cards.length === 0) {
+    return (
+      <div className="flex items-center justify-center px-4 py-4">
+        <div style={{
+          width: 58, height: 86, borderRadius: 'var(--radius-card)',
+          border: '1.5px dashed rgba(255,255,255,0.12)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <span style={{ color: 'var(--text-dim)', fontSize: 10 }}>empty</span>
+        </div>
+      </div>
+    )
+  }
+
+  const count = cards.length
+  const CARD_W = 58
+  const rawOverlap = count > 1
+    ? CARD_W - (containerWidth - CARD_W * 0.5) / (count - 1)
+    : 0
+  const overlap = Math.max(-24, rawOverlap)
+  const fanWidth = CARD_W + (count > 1 ? (count - 1) * (CARD_W - overlap) : 0)
+
+  return (
+    <div ref={containerRef} className="relative px-4 pb-3" style={{ minHeight: 110 }}>
+      <div className="flex items-end" style={{ width: fanWidth }}>
+        {cards.map((card, i) => {
+          const isSelected = card.rank === selectedRank
+          return (
+            <div
+              key={card.id}
+              className="flex-shrink-0"
+              style={{
+                marginLeft: i === 0 ? 0 : -(overlap),
+                zIndex: isSelected ? 50 : i,
+                position: 'relative',
+                transform: isSelected ? 'translateY(-14px)' : 'translateY(0)',
+                transition: 'transform 0.15s ease',
+                cursor: isMyTurn ? 'pointer' : 'default',
+              }}
+              onClick={() => onSelectRank(card.rank)}
+            >
+              <Card
+                card={card}
+                size="md"
+                animate="deal"
+                style={isSelected ? { outline: '2.5px solid var(--accent)', outlineOffset: '2px' } : undefined}
+              />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Last ask result banner ───────────────────────────────────────
+
 function LastAskBanner({
   lastAsk,
   players,
@@ -307,11 +422,13 @@ function LastAskBanner({
   const iMadeAsk = lastAsk.askerId === myPlayerId
   const iWasAsked = lastAsk.targetId === myPlayerId
 
-  let icon = '🎣'
-  let message = ''
-  let color = 'var(--text-muted)'
-  let bg = 'var(--surface-hi)'
-  let borderColor = 'var(--border-hi)'
+  let icon: string
+  let message: string
+  let color: string
+  let bg: string
+  let borderColor: string
+  let iconClass = ''
+  let wrapperClass = 'mx-2 flex items-center gap-2 px-3 py-2.5 rounded-xl fade-in'
 
   if (lastAsk.luckyFish) {
     icon = '🐟✨'
@@ -321,6 +438,7 @@ function LastAskBanner({
     color = 'var(--accent)'
     bg = 'var(--accent-dim)'
     borderColor = 'rgba(245,158,11,0.35)'
+    iconClass = 'fish-wiggle'
   } else if (lastAsk.success) {
     icon = '✅'
     message = iMadeAsk
@@ -329,22 +447,25 @@ function LastAskBanner({
         ? `${asker?.name} took your ${lastAsk.rank}s`
         : `${asker?.name} got ${lastAsk.rank}s from ${target?.name}`
     color = '#4ade80'
-    bg = 'rgba(74,222,128,0.1)'
-    borderColor = 'rgba(74,222,128,0.25)'
+    bg = 'rgba(74,222,128,0.08)'
+    borderColor = 'rgba(74,222,128,0.3)'
+    wrapperClass += ' success-flash'
   } else {
     icon = '🐟'
     message = iMadeAsk
       ? `Go fish! ${target?.name} had no ${lastAsk.rank}s`
       : `${asker?.name} asked ${target?.name} for ${lastAsk.rank}s — go fish!`
     color = 'var(--text-muted)'
+    bg = 'var(--surface-hi)'
+    borderColor = 'var(--border-hi)'
+    iconClass = 'fish-wiggle'
   }
 
   return (
-    <div
-      className="mx-2 flex items-center gap-2 px-3 py-2.5 rounded-xl fade-in"
-      style={{ background: bg, border: `1px solid ${borderColor}` }}
-    >
-      <span style={{ fontSize: 18 }}>{icon}</span>
+    <div className={wrapperClass} style={{ background: bg, border: `1px solid ${borderColor}` }}>
+      <span className={`flex-shrink-0 ${iconClass}`} style={{ fontSize: 20, display: 'inline-block' }}>
+        {icon}
+      </span>
       <span className="text-xs font-semibold" style={{ color }}>{message}</span>
     </div>
   )

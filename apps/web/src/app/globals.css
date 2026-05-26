@@ -164,6 +164,27 @@ html, body {
   }
 }
 
+@keyframes book-pop {
+  0%   { transform: scale(0.75); opacity: 0.4; }
+  65%  { transform: scale(1.12); }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+@keyframes fish-wiggle {
+  0%   { transform: translateX(0)    rotate(0deg); }
+  20%  { transform: translateX(5px)  rotate(8deg); }
+  45%  { transform: translateX(-5px) rotate(-8deg); }
+  65%  { transform: translateX(3px)  rotate(4deg); }
+  82%  { transform: translateX(-2px) rotate(-3deg); }
+  100% { transform: translateX(0)    rotate(0deg); }
+}
+
+@keyframes success-flash {
+  0%   { box-shadow: 0 0 0 0   rgba(74,222,128,0.7); }
+  50%  { box-shadow: 0 0 0 8px rgba(74,222,128,0);   }
+  100% { box-shadow: 0 0 0 0   rgba(74,222,128,0);   }
+}
+
 .card-deal      { animation: dealIn   0.32s cubic-bezier(0.22,1,0.36,1) both; }
 .card-deal-slow { animation: dealIn   1.3s  cubic-bezier(0.22,1,0.36,1) both; }
 .card-flip  { animation: flipIn   0.22s ease-out both; }
@@ -173,6 +194,9 @@ html, body {
 .bust-pop   { animation: bust-pop  0.45s cubic-bezier(0.22,1,0.36,1) both; }
 .red-pulse  { animation: red-pulse 1s   ease infinite; }
 .exchange-pulse { animation: exchange-pulse 1.4s ease infinite; }
+.book-pop    { animation: book-pop    0.5s cubic-bezier(0.22,1,0.36,1) both; }
+.fish-wiggle { animation: fish-wiggle 0.7s ease-in-out both; }
+.success-flash { animation: success-flash 0.6s ease-out both; }
 
 /* ── Utilities ───────────────────────────────────────────────── */
 
