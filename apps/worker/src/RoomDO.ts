@@ -2232,6 +2232,7 @@ export class RoomDO implements DurableObject {
     const matchingCards = targetHand.cards.filter(c => c.rank === rank)
     const success = matchingCards.length > 0
     let luckyFish = false
+    let drewCard = false
 
     if (success) {
       // Transfer all matching cards from target to asker
@@ -2249,10 +2250,11 @@ export class RoomDO implements DurableObject {
         gs.drawPileCount = this.drawPile.length
         askerHand.cards.push(drawn)
         luckyFish = drawn.rank === rank
+        drewCard = true
       }
     }
 
-    gs.goFishLastAsk = { askerId: asker.id, targetId: targetPlayerId, rank, success, luckyFish }
+    gs.goFishLastAsk = { askerId: asker.id, targetId: targetPlayerId, rank, success, luckyFish, drewCard }
 
     // Check if asker formed any books after receiving cards
     this.goFishCheckBooks(gs, asker.id)

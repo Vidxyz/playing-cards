@@ -179,35 +179,49 @@ export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
       </div>
 
       {/* ── Draw pile ── */}
-      <div className="flex items-center justify-center gap-3">
-        <div className="flex flex-col items-center gap-1">
-          <div className="relative" style={{ width: 52, height: 74 }}>
-            <div style={{
-              position: 'absolute', top: -2, left: -2, width: 52, height: 74,
-              borderRadius: 'var(--radius-card)',
-              background: 'linear-gradient(145deg,#1a2d54,#1e3560)',
-              border: '1px solid rgba(255,255,255,0.06)',
-            }} />
-            <div style={{
-              position: 'absolute', top: 0, left: 0, width: 52, height: 74,
-              borderRadius: 'var(--radius-card)',
-              background: 'linear-gradient(145deg,#243f72,#1e3560)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: 700 }}>
-                {gameState.drawPileCount}
+      {(() => {
+        const pileEmpty = gameState.drawPileCount === 0
+        return (
+          <div className="flex items-center justify-center gap-3">
+            <div className="flex flex-col items-center gap-1">
+              <div className="relative" style={{ width: 52, height: 74 }}>
+                {!pileEmpty && (
+                  <div style={{
+                    position: 'absolute', top: -2, left: -2, width: 52, height: 74,
+                    borderRadius: 'var(--radius-card)',
+                    background: 'linear-gradient(145deg,#1a2d54,#1e3560)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                  }} />
+                )}
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, width: 52, height: 74,
+                  borderRadius: 'var(--radius-card)',
+                  background: pileEmpty
+                    ? 'rgba(255,255,255,0.04)'
+                    : 'linear-gradient(145deg,#243f72,#1e3560)',
+                  border: pileEmpty
+                    ? '1.5px dashed rgba(255,255,255,0.12)'
+                    : '1px solid rgba(255,255,255,0.12)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  opacity: pileEmpty ? 0.5 : 1,
+                }}>
+                  <span style={{ color: pileEmpty ? 'var(--text-dim)' : 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: 700 }}>
+                    {pileEmpty ? '—' : gameState.drawPileCount}
+                  </span>
+                </div>
+              </div>
+              <span className="text-[9px] uppercase tracking-widest" style={{ color: pileEmpty ? 'var(--text-dim)' : 'var(--text-dim)' }}>
+                {pileEmpty ? 'pile empty' : 'draw pile'}
               </span>
             </div>
+            {!isMyTurn && gameState.phase === 'playing' && currentTurnPlayer && (
+              <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
+                Waiting for {currentTurnPlayer.name}…
+              </span>
+            )}
           </div>
-          <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>draw pile</span>
-        </div>
-        {!isMyTurn && gameState.phase === 'playing' && currentTurnPlayer && (
-          <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
-            Waiting for {currentTurnPlayer.name}…
-          </span>
-        )}
-      </div>
+        )
+      })()}
 
       {/* ── My hand ── */}
       <div style={{ borderTop: '1px solid var(--border)' }}>
@@ -423,7 +437,7 @@ function LastAskBanner({
   const iWasAsked = lastAsk.targetId === myPlayerId
 
   let icon: string
-  let message: string
+  let lines: string[]
   let color: string
   let bg: string
   let borderColor: string
@@ -432,29 +446,39 @@ function LastAskBanner({
 
   if (lastAsk.luckyFish) {
     icon = '🐟✨'
-    message = iMadeAsk
-      ? `Lucky fish! You drew a ${lastAsk.rank} from the pile!`
-      : `${asker?.name} drew a ${lastAsk.rank} — lucky fish!`
+    lines = iMadeAsk
+      ? [`Lucky fish! Drew a ${lastAsk.rank} from the pile!`, 'Your turn again — keep asking!']
+      : [`${asker?.name} drew a ${lastAsk.rank} — lucky fish! They go again.`]
     color = 'var(--accent)'
     bg = 'var(--accent-dim)'
     borderColor = 'rgba(245,158,11,0.35)'
     iconClass = 'fish-wiggle'
   } else if (lastAsk.success) {
     icon = '✅'
-    message = iMadeAsk
-      ? `${target?.name} had ${lastAsk.rank}s — you got them!`
+    lines = iMadeAsk
+      ? [`${target?.name} had ${lastAsk.rank}s — you got them!`]
       : iWasAsked
-        ? `${asker?.name} took your ${lastAsk.rank}s`
-        : `${asker?.name} got ${lastAsk.rank}s from ${target?.name}`
+        ? [`${asker?.name} took your ${lastAsk.rank}s`]
+        : [`${asker?.name} got ${lastAsk.rank}s from ${target?.name}`]
     color = '#4ade80'
     bg = 'rgba(74,222,128,0.08)'
     borderColor = 'rgba(74,222,128,0.3)'
     wrapperClass += ' success-flash'
-  } else {
+  } else if (lastAsk.drewCard) {
     icon = '🐟'
-    message = iMadeAsk
-      ? `Go fish! ${target?.name} had no ${lastAsk.rank}s`
-      : `${asker?.name} asked ${target?.name} for ${lastAsk.rank}s — go fish!`
+    lines = iMadeAsk
+      ? [`Go fish! ${target?.name} had no ${lastAsk.rank}s`, 'Drew a card from the pile — turn passes.']
+      : [`${asker?.name} asked for ${lastAsk.rank}s — go fish!`, `${iWasAsked ? 'You had none.' : ''} Drew a card from the pile.`.trim()]
+    color = 'var(--text-muted)'
+    bg = 'var(--surface-hi)'
+    borderColor = 'var(--border-hi)'
+    iconClass = 'fish-wiggle'
+  } else {
+    // Pile was empty — no card drawn
+    icon = '🐟'
+    lines = iMadeAsk
+      ? [`Go fish! ${target?.name} had no ${lastAsk.rank}s`, 'Pile is empty — turn passes.']
+      : [`${asker?.name} asked for ${lastAsk.rank}s — go fish! Pile empty.`]
     color = 'var(--text-muted)'
     bg = 'var(--surface-hi)'
     borderColor = 'var(--border-hi)'
@@ -466,7 +490,14 @@ function LastAskBanner({
       <span className={`flex-shrink-0 ${iconClass}`} style={{ fontSize: 20, display: 'inline-block' }}>
         {icon}
       </span>
-      <span className="text-xs font-semibold" style={{ color }}>{message}</span>
+      <div className="flex flex-col gap-0.5">
+        {lines.map((line, i) => (
+          <span key={i} className={i === 0 ? 'text-xs font-semibold' : 'text-[10px]'}
+            style={{ color: i === 0 ? color : 'var(--text-dim)' }}>
+            {line}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

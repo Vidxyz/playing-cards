@@ -142,7 +142,7 @@ export interface GameState {
   pokerWinners: { playerId: string; amount: number; handName: string }[] | null
   // Go Fish-specific
   goFishBooks: Record<string, string[]>
-  goFishLastAsk: { askerId: string; targetId: string; rank: string; success: boolean; luckyFish: boolean } | null
+  goFishLastAsk: { askerId: string; targetId: string; rank: string; success: boolean; luckyFish: boolean; drewCard: boolean } | null
 }
 
 export interface GameAction {
