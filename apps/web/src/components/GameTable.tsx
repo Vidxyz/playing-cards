@@ -90,6 +90,10 @@ const GAME_LABEL: Record<string, string> = {
   rummy: 'Rummy',
   'crazy-eights': 'Crazy 8s',
 }
+const GAME_MAX_PLAYERS: Partial<Record<string, number>> = {
+  president: 8, blackjack: 7, poker: 9, euchre: 4,
+  cambio: 6, bluff: 8, 'go-fish': 6, rummy: 6, 'crazy-eights': 6,
+}
 const SUIT_OPTS_C8: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs']
 const SUIT_LABEL_C8: Record<string, string> = { spades: '♠ Spades', hearts: '♥ Hearts', diamonds: '♦ Diamonds', clubs: '♣ Clubs' }
 const SUIT_COLOR_C8: Record<string, string> = { spades: 'var(--text)', clubs: 'var(--text)', hearts: '#f87171', diamonds: '#f87171' }
@@ -423,16 +427,58 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         />
       </div>
 
-      {/* Spectator notice */}
-      {gameState.pendingPlayers.some(p => p.id === myPlayerId) && (
-        <div className="flex items-center justify-center gap-2 px-4 py-2"
-          style={{ background: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.18)' }}>
-          <span style={{ fontSize: 14 }}>👁</span>
-          <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
-            Spectating — you'll join when there's a free spot
-          </span>
-        </div>
-      )}
+      {/* Spectator notice / join choice */}
+      {(() => {
+        const pendingMe = gameState.pendingPlayers.find(p => p.id === myPlayerId)
+        if (!pendingMe) return null
+        const maxPlayers = gameType ? (GAME_MAX_PLAYERS[gameType] ?? 12) : 12
+        const hasRoom = gameState.players.length < maxPlayers
+        if (hasRoom) {
+          // Room available — offer a choice
+          return (
+            <div className="flex flex-col items-center gap-2 px-4 py-2.5"
+              style={{ background: 'rgba(245,158,11,0.07)', borderBottom: '1px solid rgba(245,158,11,0.15)' }}>
+              <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
+                {pendingMe.staySpectator ? 'Spectating only — not joining next round' : "You'll be dealt in next round"}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => send({ type: 'set_spectator_preference', staySpectator: false })}
+                  className="text-[11px] font-bold px-3 py-1 rounded-full transition-all active:scale-95"
+                  style={{
+                    background: !pendingMe.staySpectator ? 'var(--accent)' : 'var(--surface-mid)',
+                    color: !pendingMe.staySpectator ? '#000' : 'var(--text-muted)',
+                    border: '1px solid ' + (!pendingMe.staySpectator ? 'var(--accent)' : 'var(--border)'),
+                  }}
+                >
+                  Join next round
+                </button>
+                <button
+                  onClick={() => send({ type: 'set_spectator_preference', staySpectator: true })}
+                  className="text-[11px] font-bold px-3 py-1 rounded-full transition-all active:scale-95"
+                  style={{
+                    background: pendingMe.staySpectator ? 'var(--surface-hi)' : 'var(--surface-mid)',
+                    color: pendingMe.staySpectator ? 'var(--text)' : 'var(--text-muted)',
+                    border: '1px solid ' + (pendingMe.staySpectator ? 'var(--border-hi)' : 'var(--border)'),
+                  }}
+                >
+                  Just watch
+                </button>
+              </div>
+            </div>
+          )
+        }
+        // No room — pure spectator
+        return (
+          <div className="flex items-center justify-center gap-2 px-4 py-2"
+            style={{ background: 'rgba(245,158,11,0.07)', borderBottom: '1px solid rgba(245,158,11,0.15)' }}>
+            <span style={{ fontSize: 13 }}>👁</span>
+            <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
+              Spectating — game is full, you'll join when there's a free spot
+            </span>
+          </div>
+        )
+      })()}
 
       {/* ── Table (shared zones + draw pile) ─────────── */}
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-3 overflow-y-auto">

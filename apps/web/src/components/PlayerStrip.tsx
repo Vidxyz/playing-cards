@@ -161,7 +161,9 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
               <span className="text-xs font-semibold truncate max-w-[72px]" style={{ color: 'var(--text)' }}>
                 {p.name}
               </span>
-              <span className="text-[10px]" style={{ color: 'var(--accent)' }}>next round</span>
+              <span className="text-[10px]" style={{ color: p.staySpectator ? 'var(--text-dim)' : 'var(--accent)' }}>
+                {p.staySpectator ? 'watching' : 'next round'}
+              </span>
             </div>
           </div>
         ))}

@@ -34,6 +34,7 @@ export interface Player {
   disconnectedAt?: number
   isReady: boolean
   isFolded: boolean
+  staySpectator?: boolean
   trickCount: number
   roundScore: number
   totalScore: number

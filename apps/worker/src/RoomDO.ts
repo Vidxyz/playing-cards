@@ -413,6 +413,16 @@ export class RoomDO implements DurableObject {
       return
     }
 
+    // Pending players can only update their own spectator preference
+    if (event.type === 'set_spectator_preference') {
+      const pending = gs.pendingPlayers.find(p => p.id === playerId)
+      if (!pending) return
+      pending.staySpectator = event.staySpectator
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
+
     const player = gs.players.find(p => p.id === playerId)
     if (!player) {
       this.sendTo(ws, { type: 'error', message: 'Player not found' })
@@ -727,6 +737,7 @@ export class RoomDO implements DurableObject {
         }
         return
       }
+
     }
 
     await this.saveState(gs)
@@ -805,11 +816,14 @@ export class RoomDO implements DurableObject {
     const config = getConfig(gs.gameType)
     if (!config) return
 
-    // Promote connected pending players up to the game's max player count
+    // Promote connected pending players who want to play, up to the game's max player count
     const slotsAvailable = Math.max(0, config.maxPlayers - gs.players.filter(p => p.isConnected).length)
-    const toPromote = gs.pendingPlayers.filter(p => p.isConnected).slice(0, slotsAvailable)
+    const toPromote = gs.pendingPlayers.filter(p => p.isConnected && !p.staySpectator).slice(0, slotsAvailable)
     const promotedIds = new Set(toPromote.map(p => p.id))
-    for (const p of toPromote) gs.players.push(p)
+    for (const p of toPromote) {
+      p.staySpectator = undefined  // clear flag now they're active
+      gs.players.push(p)
+    }
     gs.pendingPlayers = gs.pendingPlayers.filter(p => !promotedIds.has(p.id))
 
     // Permanently remove any player who left — they won't participate in this round
