@@ -106,8 +106,10 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const [exchangeBannerReady, setExchangeBannerReady] = useState(false)
   const [rummyGoOutError, setRummyGoOutError] = useState<string | null>(null)
   const [c8sPendingCardId, setC8sPendingCardId] = useState<string | null>(null)
+  const [c8sError, setC8sError] = useState<string | null>(null)
   const exchangeBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rummyGoOutErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const c8sErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const gameStateRef = useRef(gameState)
   const bluffPileCountRef = useRef(0)
 
@@ -223,11 +225,26 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
     if (gameType === 'crazy-eights') {
       const cardId = cardIds[0]
       if (!cardId) return
-      const myHand = gameStateRef.current.zones.find(z => z.id === `hand-${myPlayerId}`)
+      const gs = gameStateRef.current
+      const myHand = gs.zones.find(z => z.id === `hand-${myPlayerId}`)
       const card = myHand?.cards.find(c => c.id === cardId)
       if (!card) return
+      const discardZone = gs.zones.find(z => z.id === 'discard')
+      const topCard = discardZone?.cards[discardZone.cards.length - 1] ?? null
+      if (topCard) {
+        const effectiveSuit = gs.crazy8sDeclaredSuit ?? topCard.suit
+        const canPlay = card.rank === '8' || card.rank === topCard.rank || card.suit === effectiveSuit
+        if (!canPlay) {
+          const msg = gs.crazy8sDeclaredSuit
+            ? `Must match the declared suit (${gs.crazy8sDeclaredSuit}) or rank (${topCard.rank}), or play an 8`
+            : `Must match suit (${topCard.suit}) or rank (${topCard.rank}), or play an 8`
+          setC8sError(msg)
+          if (c8sErrTimerRef.current) clearTimeout(c8sErrTimerRef.current)
+          c8sErrTimerRef.current = setTimeout(() => setC8sError(null), 3500)
+          return
+        }
+      }
       if (card.rank === '8') {
-        // Need suit picker
         setC8sPendingCardId(cardId)
         return
       }
@@ -960,6 +977,32 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           }}
         >
           {rummyGoOutError}
+        </div>
+      )}
+
+      {c8sError && (
+        <div
+          className="card-slide"
+          style={{
+            position: 'fixed',
+            top: errorMsg ? 100 : 60,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 601,
+            background: 'rgba(180,83,9,0.95)',
+            color: '#fff',
+            padding: '10px 18px',
+            borderRadius: 12,
+            fontSize: 13,
+            fontWeight: 700,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+            maxWidth: 320,
+            textAlign: 'center',
+            pointerEvents: 'none',
+            lineHeight: 1.4,
+          }}
+        >
+          {c8sError}
         </div>
       )}
     </div>
