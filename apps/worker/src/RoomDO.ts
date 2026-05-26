@@ -104,6 +104,8 @@ export class RoomDO implements DurableObject {
   private state: DurableObjectState
   private gameState: GameState | null = null
   private drawPile: Card[] = []
+  // Grace-period timers: if a player reconnects before the timer fires, the leave is cancelled.
+  private leaveTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
 
   constructor(state: DurableObjectState) {
     this.state = state
@@ -176,6 +178,39 @@ export class RoomDO implements DurableObject {
     const player = gs.players.find(p => p.id === playerId)
     if (!player) return
 
+    // Mark disconnected immediately so the UI reflects it, but don't destroy
+    // game state yet — give the player a grace window to reconnect.
+    player.isConnected = false
+    await this.saveState(gs)
+    await this.broadcastState(gs)
+
+    // Cancel any existing timer for this player (e.g. rapid reconnect-disconnect cycle)
+    this.cancelLeaveTimer(playerId)
+
+    // After 20 s with no reconnect, treat the disconnect as a permanent leave.
+    const timer = setTimeout(() => {
+      this.leaveTimers.delete(playerId)
+      this.applyPlayerLeave(playerId).catch(() => {/* DO may have been torn down */})
+    }, 20_000)
+    this.leaveTimers.set(playerId, timer)
+  }
+
+  private cancelLeaveTimer(playerId: string): void {
+    const t = this.leaveTimers.get(playerId)
+    if (t !== undefined) {
+      clearTimeout(t)
+      this.leaveTimers.delete(playerId)
+    }
+  }
+
+  private async applyPlayerLeave(playerId: string): Promise<void> {
+    const gs = await this.loadState()
+    if (!gs) return
+
+    const player = gs.players.find(p => p.id === playerId)
+    // If they reconnected in the meantime, nothing to do
+    if (!player || player.isConnected) return
+
     // Host leaves → terminate the entire room
     if (player.isHost) {
       await this.broadcast(
@@ -186,14 +221,8 @@ export class RoomDO implements DurableObject {
       return
     }
 
-    player.isConnected = false
-
-    // Not in an active game — just mark disconnected and broadcast
-    if (gs.phase !== 'playing' && gs.phase !== 'round-over') {
-      await this.saveState(gs)
-      await this.broadcastState(gs)
-      return
-    }
+    // Not in an active game — already marked disconnected, nothing more to do
+    if (gs.phase !== 'playing' && gs.phase !== 'round-over') return
 
     // In an active game: pull the player out of the turn order
     const wasTheirTurn = gs.phase === 'playing' && gs.currentTurnPlayerId === playerId
@@ -216,7 +245,7 @@ export class RoomDO implements DurableObject {
       return
     }
 
-    // Advance turn if it was their turn and we are still in the playing phase
+    // Advance turn if it was their turn and the game is still running
     if (wasTheirTurn && gs.phase === 'playing' && gs.turnOrder.length > 0) {
       if (gs.gameType === 'blackjack') {
         if (this.allBlackjackPlayersDone(gs)) {
@@ -227,11 +256,8 @@ export class RoomDO implements DurableObject {
         }
         this.advanceTurnBlackjack(gs)
       } else {
-        // The player has been removed from turnOrder; the player who was sitting
-        // at oldTurnIdx is now the natural "next" — clamp with modulo for wrap-around.
-        const nextIdx = gs.turnOrder.length > 0
-          ? oldTurnIdx % gs.turnOrder.length
-          : 0
+        // Player already removed from turnOrder; whoever was next is now at oldTurnIdx.
+        const nextIdx = oldTurnIdx % gs.turnOrder.length
         gs.currentTurnPlayerId = gs.turnOrder[nextIdx] ?? null
       }
     }
@@ -594,8 +620,9 @@ export class RoomDO implements DurableObject {
   }
 
   private async handleJoin(playerId: string, ws: WebSocket, name: string): Promise<void> {
-    // Register session
+    // Register session and cancel any pending leave timer for this player
     this.sessions.set(playerId, { ws, playerId })
+    this.cancelLeaveTimer(playerId)
 
     let gs = await this.loadState()
 

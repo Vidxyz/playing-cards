@@ -112,45 +112,49 @@ export function Lobby({ gameState, myPlayerId, send }: Props) {
         </div>
       </Section>
 
-      {/* Game selector — host only */}
-      {isHost && (
-        <Section label="Choose Game">
-          <div className="grid grid-cols-2 gap-2">
-            {GAMES.map(game => {
-              const tooFew  = playerCount < game.min
-              const tooMany = playerCount > game.max
-              const playerMismatch = tooFew || tooMany
-              const active = selectedGame === game.type
-              const locked = game.comingSoon ?? false
+      {/* Game selector — visible to all, interactive only for host */}
+      <Section label="Choose Game">
+        <div className="grid grid-cols-2 gap-2">
+          {GAMES.map(game => {
+            const tooFew  = playerCount < game.min
+            const tooMany = playerCount > game.max
+            const playerMismatch = tooFew || tooMany
+            const active = selectedGame === game.type
+            const locked = game.comingSoon ?? false
+            const clickable = isHost && !locked
 
-              return (
-                <button
-                  key={game.type}
-                  disabled={locked}
-                  onClick={() => !locked && send({ type: 'set_game', gameType: game.type })}
-                  className="flex flex-col items-start text-left rounded-xl p-3 transition-all active:scale-95"
-                  style={{
-                    background: active ? 'var(--accent-dim)' : 'var(--surface)',
-                    border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
-                    opacity: locked ? 0.45 : 1,
-                    cursor: locked ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  <span className="text-xl mb-1.5">{game.icon}</span>
-                  <span className="font-bold text-sm" style={{ color: active ? 'var(--accent)' : 'var(--text)' }}>
-                    {game.label}
-                  </span>
-                  <span className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{game.desc}</span>
-                  <span className="text-[10px] mt-1" style={{ color: locked ? 'var(--text-dim)' : playerMismatch ? '#f87171' : 'var(--text-dim)' }}>
-                    {locked ? 'Coming soon' : game.min === game.max ? `${game.min} players` : `${game.min}–${game.max} players`}
-                    {!locked && active && playerMismatch && (tooFew ? ` · need ${game.min - playerCount} more` : ` · too many`)}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </Section>
-      )}
+            return (
+              <button
+                key={game.type}
+                disabled={!clickable}
+                onClick={() => clickable && send({ type: 'set_game', gameType: game.type })}
+                className="flex flex-col items-start text-left rounded-xl p-3 transition-all active:scale-95"
+                style={{
+                  background: active ? 'var(--accent-dim)' : 'var(--surface)',
+                  border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                  opacity: locked ? 0.45 : 1,
+                  cursor: clickable ? 'pointer' : 'default',
+                }}
+              >
+                <span className="text-xl mb-1.5">{game.icon}</span>
+                <span className="font-bold text-sm" style={{ color: active ? 'var(--accent)' : 'var(--text)' }}>
+                  {game.label}
+                </span>
+                <span className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{game.desc}</span>
+                <span className="text-[10px] mt-1" style={{ color: locked ? 'var(--text-dim)' : playerMismatch ? '#f87171' : 'var(--text-dim)' }}>
+                  {locked ? 'Coming soon' : game.min === game.max ? `${game.min} players` : `${game.min}–${game.max} players`}
+                  {!locked && active && playerMismatch && (tooFew ? ` · need ${game.min - playerCount} more` : ` · too many`)}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        {!isHost && (
+          <p className="text-[10px] mt-2 text-center" style={{ color: 'var(--text-dim)' }}>
+            Only the host can change the game
+          </p>
+        )}
+      </Section>
 
       {/* President — how to play (visible to all players) */}
       {selectedGame === 'president' && (
