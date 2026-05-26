@@ -429,7 +429,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           style={{ background: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.18)' }}>
           <span style={{ fontSize: 14 }}>👁</span>
           <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
-            Spectating — you'll be dealt in next round
+            Spectating — you'll join when there's a free spot
           </span>
         </div>
       )}

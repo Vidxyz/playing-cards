@@ -757,10 +757,10 @@ export class RoomDO implements DurableObject {
       ?? gs.pendingPlayers.find(p => p.id === playerId)
 
     if (!player) {
-      // Enforce capacity against active players only (pending don't count)
-      const config = gs.gameType ? getConfig(gs.gameType) : null
-      if (config && gs.players.length >= config.maxPlayers) {
-        this.sendTo(ws, { type: 'kicked', reason: `This room is full (max ${config.maxPlayers} players for ${config.label}).` })
+      // Hard room cap of 12 regardless of game type
+      const ROOM_MAX = 12
+      if (gs.players.length + gs.pendingPlayers.length >= ROOM_MAX) {
+        this.sendTo(ws, { type: 'kicked', reason: `This room is full (max ${ROOM_MAX} people allowed).` })
         return
       }
 
@@ -779,7 +779,7 @@ export class RoomDO implements DurableObject {
       }
 
       if (gs.phase !== 'lobby') {
-        // Game in progress — hold in pending until next deal
+        // Game in progress — hold in pending queue; promoted at next deal up to game's max
         gs.pendingPlayers.push(player)
       } else {
         gs.players.push(player)
@@ -805,11 +805,12 @@ export class RoomDO implements DurableObject {
     const config = getConfig(gs.gameType)
     if (!config) return
 
-    // Promote pending players into the active roster for this round
-    for (const p of gs.pendingPlayers) {
-      if (p.isConnected) gs.players.push(p)
-    }
-    gs.pendingPlayers = []
+    // Promote connected pending players up to the game's max player count
+    const slotsAvailable = Math.max(0, config.maxPlayers - gs.players.filter(p => p.isConnected).length)
+    const toPromote = gs.pendingPlayers.filter(p => p.isConnected).slice(0, slotsAvailable)
+    const promotedIds = new Set(toPromote.map(p => p.id))
+    for (const p of toPromote) gs.players.push(p)
+    gs.pendingPlayers = gs.pendingPlayers.filter(p => !promotedIds.has(p.id))
 
     // Permanently remove any player who left — they won't participate in this round
     gs.players = gs.players.filter(p => p.isConnected)

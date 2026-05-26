@@ -27,14 +27,14 @@ export function EuchreBoard({ gameState, myPlayerId, send }: Props) {
 
   const isMyTurn   = currentTurnPlayerId === myPlayerId
   const isDealer   = euchreDealerPlayerId === myPlayerId
-  const myPlayer   = players.find(p => p.id === myPlayerId)!
+  const myPlayer   = players.find(p => p.id === myPlayerId)
   const myHandZone = zones.find(z => z.id === `hand-${myPlayerId}`)
   const myHand     = myHandZone?.cards ?? []
-  const partner    = players.find(p => p.teamId === myPlayer.teamId && p.id !== myPlayerId)
+  const partner    = players.find(p => p.teamId === myPlayer?.teamId && p.id !== myPlayerId)
   const makerTeam  = teams.find(t => t.id === players.find(p => p.id === euchreMakerPlayerId)?.teamId)
   const iAmMaker   = euchreMakerPlayerId === myPlayerId
   const sitting    = euchreGoingAlone && partner && !iAmMaker && euchreMakerPlayerId
-    ? partner.id === myPlayerId || (players.find(p => p.id === euchreMakerPlayerId)?.teamId === myPlayer.teamId && !iAmMaker)
+    ? partner.id === myPlayerId || (players.find(p => p.id === euchreMakerPlayerId)?.teamId === myPlayer?.teamId && !iAmMaker)
     : false
 
   // Other players for the top strip (everyone except me)
@@ -42,6 +42,102 @@ export function EuchreBoard({ gameState, myPlayerId, send }: Props) {
 
   function currentPlayer() {
     return players.find(p => p.id === currentTurnPlayerId)
+  }
+
+  // Spectator view — show the full game state but no interactive elements
+  if (!myPlayer) {
+    // bidding1
+    if (euchrePhase === 'bidding1') {
+      return (
+        <div className="flex flex-col h-full overflow-y-auto">
+          <OtherPlayersStrip players={others} zones={zones} currentTurnPlayerId={currentTurnPlayerId} dealerPlayerId={euchreDealerPlayerId} teams={teams} myPlayerId={myPlayerId} />
+          <div className="flex flex-col items-center gap-5 px-6 py-4">
+            {euchreTopCard && (
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--text-dim)' }}>Top Card</p>
+                <Card card={euchreTopCard} size="lg" />
+                <p className="text-sm font-bold" style={{ color: SUIT_COLOR[euchreTopCard.suit] }}>{SUIT_SYMBOL[euchreTopCard.suit]} {SUIT_LABEL[euchreTopCard.suit]}</p>
+              </div>
+            )}
+            <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+              Waiting for <span style={{ color: 'var(--text)' }}>{currentPlayer()?.name ?? '…'}</span> to bid…
+            </p>
+            <BidProgress passCount={euchreBidPassCount} total={4} />
+          </div>
+          <TeamScoreBar teams={teams} />
+        </div>
+      )
+    }
+    // bidding2
+    if (euchrePhase === 'bidding2') {
+      return (
+        <div className="flex flex-col h-full overflow-y-auto">
+          <OtherPlayersStrip players={others} zones={zones} currentTurnPlayerId={currentTurnPlayerId} dealerPlayerId={euchreDealerPlayerId} teams={teams} myPlayerId={myPlayerId} />
+          <div className="flex flex-col items-center gap-5 px-6 py-4">
+            {euchreTopCard && (
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--text-dim)' }}>Turned Down</p>
+                <Card card={euchreTopCard} size="md" faceDown={false} style={{ opacity: 0.4 }} />
+              </div>
+            )}
+            <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+              Waiting for <span style={{ color: 'var(--text)' }}>{currentPlayer()?.name ?? '…'}</span> to call trump…
+            </p>
+          </div>
+          <TeamScoreBar teams={teams} />
+        </div>
+      )
+    }
+    // discard
+    if (euchrePhase === 'discard') {
+      return (
+        <div className="flex flex-col h-full overflow-y-auto">
+          <OtherPlayersStrip players={others} zones={zones} currentTurnPlayerId={currentTurnPlayerId} dealerPlayerId={euchreDealerPlayerId} teams={teams} myPlayerId={myPlayerId} />
+          <div className="flex-1 flex items-center justify-center px-4">
+            <div className="w-full rounded-2xl px-4 py-3 text-center"
+              style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+              <p className="text-xs font-bold uppercase tracking-wide mb-0.5" style={{ color: 'var(--accent)' }}>
+                {trumpSuit ? `${SUIT_SYMBOL[trumpSuit]} ${SUIT_LABEL[trumpSuit]} is trump` : ''}
+              </p>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                Waiting for {players.find(p => p.id === euchreDealerPlayerId)?.name} to discard…
+              </p>
+            </div>
+          </div>
+          <TeamScoreBar teams={teams} />
+        </div>
+      )
+    }
+    // playing
+    return (
+      <div className="flex flex-col h-full overflow-y-auto">
+        <OtherPlayersStrip players={others} zones={zones} currentTurnPlayerId={currentTurnPlayerId} dealerPlayerId={euchreDealerPlayerId} teams={teams} myPlayerId={myPlayerId} />
+        <div className="flex items-center justify-between px-4 py-2">
+          <div className="flex items-center gap-2">
+            {trumpSuit && (
+              <span className="text-xs font-bold px-2 py-1 rounded-full"
+                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                {SUIT_SYMBOL[trumpSuit]} {SUIT_LABEL[trumpSuit]}
+              </span>
+            )}
+            {euchreGoingAlone && (
+              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.3)' }}>
+                Going Alone
+              </span>
+            )}
+          </div>
+          <TrickTally teams={teams} players={players} />
+        </div>
+        <TrickTable players={players} zones={zones} myPlayerId={myPlayerId} />
+        {euchreCurrentTrickLedSuit && (
+          <p className="text-center text-[11px] py-1" style={{ color: 'var(--text-dim)' }}>
+            Led: {SUIT_SYMBOL[euchreCurrentTrickLedSuit]} {SUIT_LABEL[euchreCurrentTrickLedSuit]}
+          </p>
+        )}
+        <TeamScoreBar teams={teams} />
+      </div>
+    )
   }
 
   // ── BIDDING ROUND 1 ────────────────────────────────────────────────────
