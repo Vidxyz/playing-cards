@@ -431,11 +431,71 @@ playing-cards/
 
 ---
 
+## Extending the Platform
+
+The zone + visibility model is deliberately game-agnostic. Regardless of game complexity, the framework handles cards, privacy, real-time sync, reconnection, and deal/draw automatically — a new game only needs to describe its zones, its events, and its rules.
+
+### Games well-suited for this platform
+
+**Drop-in — minimal server logic needed**
+
+| Game | Players | What to add |
+|---|---|---|
+| **Hearts** | 4 | Trick-taking; mirrors Euchre closely. Add a pass-3-cards phase and a "shoot the moon" scoring check. |
+| **Spades** | 4 | Same trick-taking skeleton as Hearts. Add a `bid` field per player and track bags in `GameState`. |
+| **Rummy / Gin Rummy** | 2–6 | The draw-then-discard cycle already exists. Add meld detection (sets/runs) and a knock/gin/undercut resolution step. |
+| **Crazy Eights** | 2–8 | Play a card matching the current suit or rank. Needs one `activeSuit` field in `GameState` and a suit-chooser on 8 plays. |
+| **Sevens (Fan Tan)** | 3–7 | Build outward from the 7s. No hidden cards needed; just a server-side validity check on each play. |
+| **Snap / War** | 2–4 | Pure zone-to-zone card movement. The existing `play_cards` event covers almost all of it. |
+| **Old Maid / Pairs** | 2–6 | Opponent hands are `owner-only` by nature — the visibility model fits perfectly out of the box. |
+
+**Moderate effort — meaningful game-specific server logic**
+
+| Game | Players | What to add |
+|---|---|---|
+| **Cribbage** | 2–3 | Pegging phase and a hand-scoring engine (15s, pairs, runs, flush, nobs). Zone model fits well; scoring is the bulk of the work. |
+| **Bridge** | 4 | Euchre-style tricks but with a full bidding ladder, declarer/dummy roles, and vulnerability tracking. |
+| **Canasta** | 4 | Meld building, wild cards, freezing the pile, team scoring — comparable in complexity to Cambio. |
+| **Speed / Spit** | 2 | Simultaneous real-time play. The DO serialises all events so conflict resolution is achievable, but this game is more latency-sensitive than the others. |
+
+---
+
 ## Adding a New Game
 
-1. Add a `GameType` entry in `packages/shared/src/types.ts`
-2. Create `apps/worker/src/game/games/<name>.ts` exporting a `GameConfig`
-3. Register it in `apps/worker/src/game/zones.ts`
-4. Add a preset card and any game-specific UI hints in the frontend lobby
+Every game — regardless of tier above — touches the same set of files. The checklist below is the complete changeset for a typical new game.
 
-The zone + visibility framework handles all card state automatically.
+### 1. Shared types (two files — must stay in sync)
+
+> **Important:** The web app has a local copy of shared types at `apps/web/src/shared/` mapped via TypeScript path aliases. Every change below must be made in **both** `packages/shared/src/` **and** `apps/web/src/shared/`. Run `pnpm --filter web exec tsc --noEmit` and `pnpm --filter worker exec tsc --noEmit` to catch any mismatch.
+
+| File | Change |
+|---|---|
+| `packages/shared/src/types.ts` | Add `'my-game'` to the `GameType` union; add any game-specific fields to `GameState` |
+| `apps/web/src/shared/types.ts` | Mirror the same changes |
+| `packages/shared/src/events.ts` | Add any new `ClientEvent` variants (e.g. `\| { type: 'mygame_action'; ... }`) |
+| `apps/web/src/shared/events.ts` | Mirror the same changes |
+
+### 2. Worker — game configuration and rules
+
+| File | Change |
+|---|---|
+| `apps/worker/src/game/zones.ts` | Add a `GameConfig` entry: zone templates, deck filter, min/max players, `cardsPerPlayer` |
+| `apps/worker/src/game/deal.ts` | Add a deal branch if cards should be distributed non-uniformly (otherwise the default even-deal covers it) |
+| `apps/worker/src/RoomDO.ts` | Add `case 'mygame_action':` entries in the `handleEvent` switch; initialise any new `GameState` fields in `makeInitialState` and the deal handler |
+
+### 3. Frontend
+
+| File | Change |
+|---|---|
+| `apps/web/src/components/[Game]Board.tsx` | New component for the game-specific layout and controls |
+| `apps/web/src/components/GameTable.tsx` | Route `gameType === 'my-game'` to the new board; exclude from default hand/pass/next-round UI where not applicable |
+| `apps/web/src/components/Lobby.tsx` | Add the game to the `GAMES` array (label, icon, player range, description) |
+| `apps/web/src/components/CambioTutorial.tsx` | Optionally add a `MyGameTutorialModal` alongside the others already there |
+
+### Rough effort guide
+
+| Tier | Examples | Estimated effort |
+|---|---|---|
+| Drop-in | War, Snap, Sevens | ~2–4 hours |
+| Standard | Crazy Eights, Hearts, Rummy | ~1–2 days |
+| Complex | Cribbage, Bridge, Canasta | ~3–5 days |
