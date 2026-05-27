@@ -41,6 +41,8 @@ export function Lobby({ gameState, myPlayerId, send, onLeave, errorMsg }: Props)
   const [pendingKick, setPendingKick] = useState<{ id: string; name: string } | null>(null)
   const [confirmEndRoom, setConfirmEndRoom] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
+  const [dealing, setDealing] = useState(false)
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
   const me = gameState.players.find(p => p.id === myPlayerId)
 
   const copyJoinLink = useCallback(async () => {
@@ -104,11 +106,15 @@ export function Lobby({ gameState, myPlayerId, send, onLeave, errorMsg }: Props)
       </div>
 
       {/* Error banner */}
-      {errorMsg && (
+      {errorMsg && errorMsg !== dismissedError && (
         <div className="px-4 pt-3">
-          <div className="rounded-xl px-4 py-2.5 text-sm font-medium"
+          <div className="rounded-xl px-4 py-2.5 text-sm font-medium flex items-center justify-between gap-3"
             style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
-            {errorMsg}
+            <span>{errorMsg}</span>
+            <button
+              onClick={() => setDismissedError(errorMsg)}
+              style={{ fontSize: 16, lineHeight: 1, color: '#f87171', flexShrink: 0 }}
+            >×</button>
           </div>
         </div>
       )}
@@ -751,17 +757,17 @@ export function Lobby({ gameState, myPlayerId, send, onLeave, errorMsg }: Props)
       <div className="px-4 pb-10 pt-2">
         {isHost ? (
           <button
-            disabled={!canDeal}
-            onClick={() => send({ type: 'start_deal' })}
+            disabled={!canDeal || dealing}
+            onClick={() => { setDealing(true); send({ type: 'start_deal' }) }}
             className="w-full py-4 rounded-2xl font-bold text-base transition-all active:scale-95"
             style={{
-              background: canDeal ? 'var(--accent)' : 'var(--surface-mid)',
-              color: canDeal ? '#000' : 'var(--text-dim)',
-              border: '1px solid ' + (canDeal ? 'var(--accent)' : 'var(--border)'),
-              cursor: canDeal ? 'pointer' : 'not-allowed',
+              background: canDeal && !dealing ? 'var(--accent)' : 'var(--surface-mid)',
+              color: canDeal && !dealing ? '#000' : 'var(--text-dim)',
+              border: '1px solid ' + (canDeal && !dealing ? 'var(--accent)' : 'var(--border)'),
+              cursor: canDeal && !dealing ? 'pointer' : 'not-allowed',
             }}
           >
-            {canDeal ? 'Deal Cards' : !selectedGame ? 'Select a game above' : playerCount < (selectedConfig?.min ?? 2) ? `Need ${(selectedConfig?.min ?? 2) - playerCount} more player${(selectedConfig?.min ?? 2) - playerCount > 1 ? 's' : ''}` : `Too many players (max ${selectedConfig?.max})`}
+            {dealing ? 'Dealing…' : canDeal ? 'Deal Cards' : !selectedGame ? 'Select a game above' : playerCount < (selectedConfig?.min ?? 2) ? `Need ${(selectedConfig?.min ?? 2) - playerCount} more player${(selectedConfig?.min ?? 2) - playerCount > 1 ? 's' : ''}` : `Too many players (max ${selectedConfig?.max})`}
           </button>
         ) : (
           <button

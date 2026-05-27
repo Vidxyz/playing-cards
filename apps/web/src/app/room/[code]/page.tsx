@@ -51,9 +51,39 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
     session.playerId,
     session.name,
   )
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
+  const [gameOverSubmitted, setGameOverSubmitted] = useState(false)
+
+  const visibleError = errorMsg && errorMsg !== dismissedError ? errorMsg : null
 
   if (status === 'connecting' || !gameState) {
-    return <Splash label="Connecting…" spinner />
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-5"
+        style={{ background: 'var(--bg)' }}>
+        {visibleError ? (
+          <>
+            <div className="w-full max-w-xs rounded-xl px-4 py-3 text-sm font-medium flex items-center justify-between gap-3"
+              style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
+              <span>{visibleError}</span>
+              <button onClick={() => setDismissedError(visibleError)} style={{ fontSize: 16, lineHeight: 1, color: '#f87171', flexShrink: 0 }}>×</button>
+            </div>
+            <button
+              onClick={() => router.replace('/')}
+              className="text-sm font-semibold px-4 py-2 rounded-xl transition-all active:scale-95"
+              style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              Go Home
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="w-7 h-7 rounded-full border-2 border-t-transparent animate-spin"
+              style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Connecting…</p>
+          </>
+        )}
+      </div>
+    )
   }
 
   if (status === 'disconnected') {
@@ -67,10 +97,11 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-5 gap-5"
         style={{ background: 'var(--bg)' }}>
-        {errorMsg && (
-          <div className="w-full max-w-xs rounded-xl px-4 py-2.5 text-sm font-medium"
+        {visibleError && (
+          <div className="w-full max-w-xs rounded-xl px-4 py-2.5 text-sm font-medium flex items-center justify-between gap-3"
             style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
-            {errorMsg}
+            <span>{visibleError}</span>
+            <button onClick={() => setDismissedError(visibleError)} style={{ fontSize: 16, lineHeight: 1, color: '#f87171', flexShrink: 0 }}>×</button>
           </div>
         )}
         <div className="text-center">
@@ -90,9 +121,14 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
         <div className="flex gap-3 w-full max-w-xs">
           {isHost && (
             <button
-              onClick={() => send({ type: 'next_round' })}
+              disabled={gameOverSubmitted}
+              onClick={() => { setGameOverSubmitted(true); send({ type: 'next_round' }) }}
               className="flex-1 font-bold py-3 rounded-2xl transition-all active:scale-95"
-              style={{ background: 'var(--accent)', color: '#000' }}
+              style={{
+                background: gameOverSubmitted ? 'var(--surface-mid)' : 'var(--accent)',
+                color: gameOverSubmitted ? 'var(--text-dim)' : '#000',
+                cursor: gameOverSubmitted ? 'not-allowed' : 'pointer',
+              }}
             >
               Play Again
             </button>
