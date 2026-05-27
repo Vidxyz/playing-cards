@@ -68,6 +68,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const [rummyGoOutError, setRummyGoOutError] = useState<string | null>(null)
   const [c8sPendingCardId, setC8sPendingCardId] = useState<string | null>(null)
   const [c8sError, setC8sError] = useState<string | null>(null)
+  const [pendingKick, setPendingKick] = useState<{ id: string; name: string } | null>(null)
+  const [confirmRestart, setConfirmRestart] = useState(false)
   const exchangeBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rummyGoOutErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const c8sErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -265,19 +267,34 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         {/* Row 1: Exit | Brand (centered) | Actions + Settings */}
         <div className="relative flex items-center px-4 py-2">
 
-          {/* Left: exit button */}
+          {/* Left: exit button + host restart */}
           {isHost ? (
-            <button
-              onClick={() => send({ type: 'end_game' })}
-              className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 flex-shrink-0"
-              style={{
-                background: 'rgba(229,62,62,0.12)',
-                color: '#fc8181',
-                border: '1px solid rgba(229,62,62,0.25)',
-              }}
-            >
-              End Game
-            </button>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                onClick={() => send({ type: 'end_game' })}
+                className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
+                style={{
+                  background: 'rgba(229,62,62,0.12)',
+                  color: '#fc8181',
+                  border: '1px solid rgba(229,62,62,0.25)',
+                }}
+              >
+                End
+              </button>
+              {gameState.phase !== 'lobby' && gameState.phase !== 'game-over' && (
+                <button
+                  onClick={() => setConfirmRestart(true)}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
+                  style={{
+                    background: 'rgba(245,158,11,0.1)',
+                    color: 'var(--accent)',
+                    border: '1px solid rgba(245,158,11,0.25)',
+                  }}
+                >
+                  Restart
+                </button>
+              )}
+            </div>
           ) : (
             <button
               onClick={onLeave}
@@ -376,6 +393,8 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
         <PlayerStrip
           gameState={gameState}
           myPlayerId={myPlayerId}
+          isHost={isHost}
+          onKickRequest={(id, name) => setPendingKick({ id, name })}
         />
       </div>
 
@@ -1045,6 +1064,82 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           }}
         >
           {c8sError}
+        </div>
+      )}
+
+      {/* Restart round confirmation modal */}
+      {confirmRestart && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-6"
+          onClick={() => setConfirmRestart(false)}
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+        >
+          <div
+            className="w-full max-w-xs rounded-2xl p-6 flex flex-col gap-4"
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <p className="text-sm text-center" style={{ color: 'var(--text)' }}>
+              Restart this round?
+            </p>
+            <p className="text-[11px] text-center" style={{ color: 'var(--text-muted)' }}>
+              Cards are re-dealt. Scores and chips from previous rounds are kept. Waiting players will be dealt in.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmRestart(false)}
+                className="flex-1 text-xs font-semibold py-2 rounded-xl"
+                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { send({ type: 'restart_round' }); setConfirmRestart(false) }}
+                className="flex-1 text-xs font-semibold py-2 rounded-xl"
+                style={{ background: 'rgba(245,158,11,0.12)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}
+              >
+                Restart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Kick confirmation modal */}
+      {pendingKick && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-6"
+          onClick={() => setPendingKick(null)}
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+        >
+          <div
+            className="w-full max-w-xs rounded-2xl p-6 flex flex-col gap-4"
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <p className="text-sm text-center" style={{ color: 'var(--text)' }}>
+              Remove <strong style={{ color: 'var(--text)' }}>{pendingKick.name}</strong> from the room?
+            </p>
+            <p className="text-[11px] text-center" style={{ color: 'var(--text-muted)' }}>
+              Their cards stay until the next round.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPendingKick(null)}
+                className="flex-1 text-xs font-semibold py-2 rounded-xl"
+                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { send({ type: 'kick_player', playerId: pendingKick.id }); setPendingKick(null) }}
+                className="flex-1 text-xs font-semibold py-2 rounded-xl"
+                style={{ background: 'rgba(229,62,62,0.15)', color: '#fc8181', border: '1px solid rgba(229,62,62,0.3)' }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

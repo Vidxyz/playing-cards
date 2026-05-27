@@ -295,14 +295,15 @@ export class RoomDO implements DurableObject {
     await this.broadcastState(gs)
   }
 
-  private handlePlayerLeave(gs: GameState, player: Player): void {
+  private handlePlayerLeave(gs: GameState, player: Player, redistributeCards = true): void {
     const pid = player.id
 
     if (gs.gameType === 'president') {
       gs.presidentPassedIds = gs.presidentPassedIds.filter(id => id !== pid)
 
-      // Count them as having finished at their current position
-      if (!gs.presidentFinishOrder.includes(pid)) {
+      // Disconnecting players count as finishing at their current position.
+      // Kicked players are removed entirely — don't assign them a role.
+      if (redistributeCards && !gs.presidentFinishOrder.includes(pid)) {
         gs.presidentFinishOrder.push(pid)
       }
 
@@ -357,32 +358,35 @@ export class RoomDO implements DurableObject {
     } else if (gs.gameType === 'poker') {
       player.isFolded = true
     } else if (gs.gameType === 'go-fish') {
-      // Return disconnected player's cards to the draw pile and reshuffle
-      const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
-      if (handZone && handZone.cards.length > 0) {
-        this.drawPile.push(...handZone.cards)
-        handZone.cards = []
-        this.drawPile = shuffle(this.drawPile)
-        gs.drawPileCount = this.drawPile.length
+      if (redistributeCards) {
+        const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+        if (handZone && handZone.cards.length > 0) {
+          this.drawPile.push(...handZone.cards)
+          handZone.cards = []
+          this.drawPile = shuffle(this.drawPile)
+          gs.drawPileCount = this.drawPile.length
+        }
       }
     } else if (gs.gameType === 'rummy') {
-      // Return disconnected player's hand cards to draw pile and reshuffle
-      const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
-      if (handZone && handZone.cards.length > 0) {
-        this.drawPile.push(...handZone.cards)
-        handZone.cards = []
-        this.drawPile = shuffle(this.drawPile)
-        gs.drawPileCount = this.drawPile.length
+      if (redistributeCards) {
+        const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+        if (handZone && handZone.cards.length > 0) {
+          this.drawPile.push(...handZone.cards)
+          handZone.cards = []
+          this.drawPile = shuffle(this.drawPile)
+          gs.drawPileCount = this.drawPile.length
+        }
       }
-      // Reset the draw-state if it was this player's turn
       gs.rummyHasDrawn = false
     } else if (gs.gameType === 'crazy-eights') {
-      const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
-      if (handZone && handZone.cards.length > 0) {
-        this.drawPile.push(...handZone.cards)
-        handZone.cards = []
-        this.drawPile = shuffle(this.drawPile)
-        gs.drawPileCount = this.drawPile.length
+      if (redistributeCards) {
+        const handZone = gs.zones.find(z => z.id === `hand-${player.id}`)
+        if (handZone && handZone.cards.length > 0) {
+          this.drawPile.push(...handZone.cards)
+          handZone.cards = []
+          this.drawPile = shuffle(this.drawPile)
+          gs.drawPileCount = this.drawPile.length
+        }
       }
     }
   }
@@ -548,9 +552,14 @@ export class RoomDO implements DurableObject {
 
       case 'kick_player':
         if (!player.isHost) return
-        if (gs.phase !== 'lobby') return
-        if (event.playerId === playerId) return
+        if (event.playerId === playerId) return  // can't kick yourself
         await this.handleKickPlayer(gs, event.playerId)
+        return
+
+      case 'restart_round':
+        if (!player.isHost) return
+        if (gs.phase === 'lobby' || gs.phase === 'game-over') return
+        await this.handleRestartRound(gs)
         return
 
       case 'end_game':
@@ -1794,25 +1803,97 @@ export class RoomDO implements DurableObject {
   }
 
   private async handleKickPlayer(gs: GameState, targetPlayerId: string): Promise<void> {
-    const target = gs.players.find(p => p.id === targetPlayerId)
-    if (!target) return
-
-    // Cancel any pending leave timer for this player
     this.cancelLeaveTimer(targetPlayerId)
 
-    // Tell the kicked player they've been removed
+    // Tell the kicked player they've been removed, then close their connection so
+    // they cannot receive the subsequent broadcastState (which would overwrite the
+    // kicked event on their client before navigation completes).
     const targetSession = this.sessions.get(targetPlayerId)
     if (targetSession) {
       this.sendTo(targetSession.ws, { type: 'kicked', reason: 'You were removed from the room by the host' })
+      targetSession.ws.close(1000, 'kicked')
       this.sessions.delete(targetPlayerId)
     }
 
-    // Remove from game state
-    gs.players = gs.players.filter(p => p.id !== targetPlayerId)
-    gs.players.forEach((p, i) => { p.seatIndex = i })
+    // Spectating / pending player — just drop from queue, no game impact
+    if (gs.pendingPlayers.some(p => p.id === targetPlayerId)) {
+      gs.pendingPlayers = gs.pendingPlayers.filter(p => p.id !== targetPlayerId)
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
+
+    const target = gs.players.find(p => p.id === targetPlayerId)
+    if (!target) return
+
+    if (gs.phase === 'lobby') {
+      gs.players = gs.players.filter(p => p.id !== targetPlayerId)
+      gs.players.forEach((p, i) => { p.seatIndex = i })
+    } else {
+      // Mid-game: orphan the player's cards; advance turn if needed
+      const wasTheirTurn = gs.currentTurnPlayerId === targetPlayerId
+      const oldTurnIdx = gs.turnOrder.indexOf(targetPlayerId)
+
+      // Remove from both arrays before cleanup so any end-of-round checks see correct counts
+      gs.turnOrder = gs.turnOrder.filter(id => id !== targetPlayerId)
+      gs.players = gs.players.filter(p => p.id !== targetPlayerId)
+
+      // Game-specific cleanup; cards stay orphaned (redistributeCards = false)
+      this.handlePlayerLeave(gs, target, false)
+
+      // Advance turn if it was their turn and the round is still running
+      if (wasTheirTurn && gs.phase === 'playing' && gs.turnOrder.length > 0) {
+        if (gs.gameType === 'blackjack') {
+          if (this.allBlackjackPlayersDone(gs)) {
+            await this.saveState(gs)
+            await this.broadcastState(gs)
+            await this.handleBlackjackDealerPlay(gs)
+            return
+          }
+          this.advanceTurnBlackjack(gs)
+        } else {
+          const nextIdx = oldTurnIdx % gs.turnOrder.length
+          gs.currentTurnPlayerId = gs.turnOrder[nextIdx] ?? null
+        }
+      }
+    }
 
     await this.saveState(gs)
     await this.broadcastState(gs)
+  }
+
+  private async handleRestartRound(gs: GameState): Promise<void> {
+    if (!gs.gameType) return
+
+    // Reset per-player round state without accumulating into totals
+    for (const player of gs.players) {
+      player.trickCount = 0
+      player.isFolded = false
+      player.roundScore = 0
+    }
+    for (const team of gs.teams) {
+      team.roundScore = 0
+    }
+
+    // Reset all per-round state that handleDeal doesn't clear itself
+    gs.trumpSuit = null
+    gs.lastAction = null
+    gs.bluffReveal = null
+    gs.lastBluffBatch = null
+    gs.bluffActiveRank = null
+    gs.bluffHistory = []
+    gs.bluffPassCount = 0
+    gs.bluffPassedPlayerIds = []
+    gs.cambioDrawn = null
+    gs.cambioPower = null
+    gs.cambioCaller = null
+    gs.cambioFinalRound = false
+    gs.cambioPeekSwapTarget = null
+
+    // Decrement roundNumber so handleDeal's ++ lands on the same round number
+    gs.roundNumber = Math.max(0, gs.roundNumber - 1)
+
+    await this.handleDeal(gs)
   }
 
   private handleAssignSeat(gs: GameState, targetPlayerId: string, seatIndex: number): void {

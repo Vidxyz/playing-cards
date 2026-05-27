@@ -7,9 +7,11 @@ import { getPokerBlinds } from '@/lib/poker'
 interface Props {
   gameState: GameState
   myPlayerId: string
+  isHost?: boolean
+  onKickRequest?: (playerId: string, name: string) => void
 }
 
-export function PlayerStrip({ gameState, myPlayerId }: Props) {
+export function PlayerStrip({ gameState, myPlayerId, isHost, onKickRequest }: Props) {
   const others = gameState.players.filter(p => p.id !== myPlayerId)
   const pending = gameState.pendingPlayers
   if (others.length === 0 && pending.length === 0) return null
@@ -124,6 +126,17 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
             )}
           </>
         )}
+
+        {isHost && !player.isHost && onKickRequest && (
+          <button
+            onClick={() => onKickRequest(player.id, player.name)}
+            className="flex-shrink-0 flex items-center justify-center rounded-full transition-all active:scale-90"
+            style={{ width: 18, height: 18, background: 'rgba(239,68,68,0.12)', color: '#fc8181', border: '1px solid rgba(239,68,68,0.25)', fontSize: 10, lineHeight: 1 }}
+            title={`Remove ${player.name}`}
+          >
+            ×
+          </button>
+        )}
       </div>
     )
   }
@@ -156,6 +169,16 @@ export function PlayerStrip({ gameState, myPlayerId }: Props) {
                 {p.staySpectator ? 'watching' : 'next round'}
               </span>
             </div>
+            {isHost && onKickRequest && (
+              <button
+                onClick={() => onKickRequest(p.id, p.name)}
+                className="flex-shrink-0 flex items-center justify-center rounded-full transition-all active:scale-90"
+                style={{ width: 18, height: 18, background: 'rgba(239,68,68,0.12)', color: '#fc8181', border: '1px solid rgba(239,68,68,0.25)', fontSize: 10, lineHeight: 1 }}
+                title={`Remove ${p.name}`}
+              >
+                ×
+              </button>
+            )}
           </div>
         ))}
       </div>

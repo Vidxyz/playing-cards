@@ -14,6 +14,7 @@ export type ClientEvent =
   | { type: 'resolve_bluff' }
   | { type: 'pass_turn' }
   | { type: 'next_round' }
+  | { type: 'restart_round' }
   | { type: 'end_game' }
   | { type: 'kick_player'; playerId: string }
   | { type: 'set_trump'; suit: Suit }
