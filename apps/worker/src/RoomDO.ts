@@ -255,8 +255,12 @@ export class RoomDO implements DurableObject {
       return
     }
 
-    // Not in an active game — nothing more to do
-    if (gs.phase !== 'playing' && gs.phase !== 'round-over') return
+    // Not in an active game — persist any host transfer that happened above, then stop
+    if (gs.phase !== 'playing' && gs.phase !== 'round-over') {
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+      return
+    }
 
     // In an active game: pull the player out of the turn order
     const wasTheirTurn = gs.phase === 'playing' && gs.currentTurnPlayerId === playerId
