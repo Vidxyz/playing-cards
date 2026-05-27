@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { GameState } from '@playing-cards/shared'
 
 interface Props {
@@ -15,6 +16,7 @@ export function ScoreBoard({ gameState, onClose, onNextRound, onEndGame, onHome,
   const { players, teams, gameType, phase } = gameState
   const showTeams = teams.length > 0
   const isRoundOver = phase === 'round-over'
+  const [submitted, setSubmitted] = useState(false)
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-50 flex justify-center">
@@ -41,9 +43,14 @@ export function ScoreBoard({ gameState, onClose, onNextRound, onEndGame, onHome,
           <div className="flex gap-2 mt-5">
             {isHost && onNextRound && (
               <button
-                onClick={() => { onNextRound(); onClose() }}
+                disabled={submitted}
+                onClick={() => { setSubmitted(true); onNextRound(); onClose() }}
                 className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-                style={{ background: 'var(--accent)', color: '#000' }}
+                style={{
+                  background: submitted ? 'var(--surface-mid)' : 'var(--accent)',
+                  color: submitted ? 'var(--text-dim)' : '#000',
+                  cursor: submitted ? 'not-allowed' : 'pointer',
+                }}
               >
                 Play Again
               </button>
@@ -59,9 +66,15 @@ export function ScoreBoard({ gameState, onClose, onNextRound, onEndGame, onHome,
             )}
             {isHost && onEndGame && (
               <button
-                onClick={() => { onEndGame(); onClose() }}
+                disabled={submitted}
+                onClick={() => { setSubmitted(true); onEndGame(); onClose() }}
                 className="px-4 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-                style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}
+                style={{
+                  background: submitted ? 'var(--surface-mid)' : 'rgba(239,68,68,0.15)',
+                  color: submitted ? 'var(--text-dim)' : '#f87171',
+                  border: '1px solid ' + (submitted ? 'var(--border)' : 'rgba(239,68,68,0.3)'),
+                  cursor: submitted ? 'not-allowed' : 'pointer',
+                }}
               >
                 End
               </button>

@@ -67,6 +67,12 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-5 gap-5"
         style={{ background: 'var(--bg)' }}>
+        {errorMsg && (
+          <div className="w-full max-w-xs rounded-xl px-4 py-2.5 text-sm font-medium"
+            style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
+            {errorMsg}
+          </div>
+        )}
         <div className="text-center">
           <div className="text-4xl mb-2">🏆</div>
           <h2 className="font-bold text-2xl" style={{ color: 'var(--text)' }}>Game Over</h2>
@@ -106,7 +112,7 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
   if (gameState.phase === 'lobby') {
     return (
       <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-        <Lobby gameState={gameState} myPlayerId={session.playerId} send={send} onLeave={() => router.replace('/')} />
+        <Lobby gameState={gameState} myPlayerId={session.playerId} send={send} onLeave={() => router.replace('/')} errorMsg={errorMsg} />
       </div>
     )
   }

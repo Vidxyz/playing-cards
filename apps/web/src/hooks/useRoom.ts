@@ -24,9 +24,12 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const socketRef = useRef<RoomSocket | null>(null)
   const joinedRef = useRef(false)
+  // Track whether we've ever received game state — used to distinguish fatal vs gameplay errors
+  const hasGameStateRef = useRef(false)
 
   const handleMessage = useCallback((event: ServerEvent) => {
     if (event.type === 'state') {
+      hasGameStateRef.current = true
       setGameState(event.state)
       if (event.state.lastAction) {
         setLastAction(event.state.lastAction)
@@ -36,7 +39,10 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
     } else if (event.type === 'error') {
       setErrorMsg(event.message)
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
-      errorTimerRef.current = setTimeout(() => setErrorMsg(null), 3000)
+      // Only auto-clear gameplay errors; pre-game fatal errors (no state yet) persist
+      if (hasGameStateRef.current) {
+        errorTimerRef.current = setTimeout(() => setErrorMsg(null), 3000)
+      }
     } else if (event.type === 'peek_result') {
       const entry: PeekResult = { cardId: event.cardId, zoneId: event.zoneId, rank: event.rank, suit: event.suit }
       if (event.fromInitialDeal) {
@@ -72,6 +78,7 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
     }
     if (s === 'connected' && !joinedRef.current) {
       joinedRef.current = true
+      setInitialPeeks([])
       socketRef.current?.send({ type: 'join', name: playerName })
     }
   }, [playerName])

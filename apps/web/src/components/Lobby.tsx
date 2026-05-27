@@ -25,9 +25,10 @@ interface Props {
   myPlayerId: string
   send: (event: ClientEvent) => void
   onLeave: () => void
+  errorMsg?: string | null
 }
 
-export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
+export function Lobby({ gameState, myPlayerId, send, onLeave, errorMsg }: Props) {
   const [showCambioTutorial, setShowCambioTutorial] = useState(false)
   const [showBluffTutorial, setShowBluffTutorial] = useState(false)
   const [showEuchreTutorial, setShowEuchreTutorial] = useState(false)
@@ -38,6 +39,7 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
   const [showRummyTutorial, setShowRummyTutorial] = useState(false)
   const [showCrazyEightsTutorial, setShowCrazyEightsTutorial] = useState(false)
   const [pendingKick, setPendingKick] = useState<{ id: string; name: string } | null>(null)
+  const [confirmEndRoom, setConfirmEndRoom] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
   const me = gameState.players.find(p => p.id === myPlayerId)
 
@@ -67,7 +69,7 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
         style={{ borderBottom: '1px solid var(--border)' }}>
         {isHost ? (
           <button
-            onClick={() => { send({ type: 'end_game' }); onLeave() }}
+            onClick={() => setConfirmEndRoom(true)}
             className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
             style={{
               background: 'rgba(229,62,62,0.12)',
@@ -100,6 +102,16 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
           <ThemeToggle compact />
         </div>
       </div>
+
+      {/* Error banner */}
+      {errorMsg && (
+        <div className="px-4 pt-3">
+          <div className="rounded-xl px-4 py-2.5 text-sm font-medium"
+            style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
+            {errorMsg}
+          </div>
+        </div>
+      )}
 
       {/* Room code hero */}
       <div className="flex flex-col items-center pt-10 pb-6 px-4">
@@ -657,6 +669,44 @@ export function Lobby({ gameState, myPlayerId, send, onLeave }: Props) {
 
       {showCrazyEightsTutorial && (
         <CrazyEightsTutorialModal onClose={() => setShowCrazyEightsTutorial(false)} />
+      )}
+
+      {confirmEndRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6" onClick={() => setConfirmEndRoom(false)}
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+          <div
+            className="w-full max-w-xs rounded-3xl p-6 flex flex-col gap-4"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center gap-2 text-center">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                <span style={{ fontSize: 22 }}>🚪</span>
+              </div>
+              <h3 className="font-bold text-base" style={{ color: 'var(--text)' }}>End Room?</h3>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                Everyone will be removed and the room will close.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmEndRoom(false)}
+                className="flex-1 py-2.5 rounded-2xl text-sm font-semibold transition-all active:scale-95"
+                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { send({ type: 'end_game' }); onLeave() }}
+                className="flex-1 py-2.5 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}
+              >
+                End Room
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {pendingKick && (
