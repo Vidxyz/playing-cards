@@ -232,14 +232,19 @@ export class RoomDO implements DurableObject {
       return
     }
 
-    // Host leaves → terminate the entire room
+    // Host leaves → pass host to the next connected player; terminate only if no one remains
     if (player.isHost) {
-      await this.broadcast(
-        { type: 'kicked', reason: `${player.name} (host) left — room closed` },
-        null,
-      )
-      await this.state.storage.deleteAll()
-      return
+      const successor = gs.players.find(p => p.id !== playerId && p.isConnected)
+        ?? gs.pendingPlayers.find(p => p.isConnected)
+      if (!successor) {
+        await this.broadcast({ type: 'kicked', reason: 'All players have left — room closed' }, null)
+        await this.state.storage.deleteAll()
+        return
+      }
+      player.isHost = false
+      successor.isHost = true
+      gs.hostId = successor.id
+      // Fall through to normal leave handling below
     }
 
     // In lobby: remove the player entirely so others see them leave immediately
