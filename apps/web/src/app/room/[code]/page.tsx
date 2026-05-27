@@ -1,6 +1,6 @@
 'use client'
 
-`import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { use } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRoom } from '@/hooks/useRoom'
