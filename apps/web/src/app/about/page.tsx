@@ -16,19 +16,18 @@ export default function AboutPage() {
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       {/* Header */}
-      <div
-        className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 pt-safe"
-        style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}
-      >
-        <Link
-          href="/"
-          className="flex items-center justify-center rounded-full transition-all active:scale-95"
-          style={{ width: 32, height: 32, background: 'var(--surface-mid)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
-          aria-label="Back to home"
-        >
-          ←
-        </Link>
-        <span className="text-sm font-bold" style={{ color: 'var(--text)' }}>About</span>
+      <div className="sticky top-0 z-10 pt-safe" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
+        <div className="flex items-center gap-3 px-4 py-3">
+          <Link
+            href="/"
+            className="flex items-center justify-center rounded-full transition-all active:scale-95"
+            style={{ width: 32, height: 32, background: 'var(--surface-mid)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+            aria-label="Back to home"
+          >
+            ←
+          </Link>
+          <span className="text-sm font-bold" style={{ color: 'var(--text)' }}>About</span>
+        </div>
       </div>
 
       <main className="max-w-md mx-auto px-4 py-8 flex flex-col gap-8">
