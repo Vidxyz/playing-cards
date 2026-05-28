@@ -40,6 +40,7 @@ export function Lobby({ gameState, myPlayerId, send, onLeave, errorMsg }: Props)
   const [showCrazyEightsTutorial, setShowCrazyEightsTutorial] = useState(false)
   const [pendingKick, setPendingKick] = useState<{ id: string; name: string } | null>(null)
   const [confirmEndRoom, setConfirmEndRoom] = useState(false)
+  const [confirmLeave, setConfirmLeave] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
   const [dealing, setDealing] = useState(false)
   const [dismissedError, setDismissedError] = useState<string | null>(null)
@@ -83,7 +84,7 @@ export function Lobby({ gameState, myPlayerId, send, onLeave, errorMsg }: Props)
           </button>
         ) : (
           <button
-            onClick={onLeave}
+            onClick={() => setConfirmLeave(true)}
             className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
             style={{
               background: 'var(--surface-mid)',
@@ -675,6 +676,44 @@ export function Lobby({ gameState, myPlayerId, send, onLeave, errorMsg }: Props)
 
       {showCrazyEightsTutorial && (
         <CrazyEightsTutorialModal onClose={() => setShowCrazyEightsTutorial(false)} />
+      )}
+
+      {confirmLeave && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6" onClick={() => setConfirmLeave(false)}
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+          <div
+            className="w-full max-w-xs rounded-3xl p-6 flex flex-col gap-4"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center gap-2 text-center">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                <span style={{ fontSize: 22 }}>🚪</span>
+              </div>
+              <h3 className="font-bold text-base" style={{ color: 'var(--text)' }}>Leave Lobby?</h3>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                You can rejoin if the room is still open.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmLeave(false)}
+                className="flex-1 py-2.5 rounded-2xl text-sm font-semibold transition-all active:scale-95"
+                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onLeave}
+                className="flex-1 py-2.5 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}
+              >
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {confirmEndRoom && (
