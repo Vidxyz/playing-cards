@@ -17,6 +17,22 @@ const ROLE_LABEL: Record<string, string> = {
   bum: '💀 Bum',
 }
 
+const FINISH_TITLE: Record<string, { icon: string; label: string; color: string; bg: string; border: string }> = {
+  president: { icon: '👑', label: 'President',  color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)' },
+  vp:        { icon: '🥈', label: 'Vice Pres',  color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.35)' },
+  neutral:   { icon: '😐', label: 'Neutral',    color: 'var(--text-dim)', bg: 'var(--surface-mid)', border: 'var(--border)' },
+  vb:        { icon: '😬', label: 'Vice Bum',   color: '#fb923c', bg: 'rgba(251,146,60,0.12)', border: 'rgba(251,146,60,0.35)' },
+  bum:       { icon: '💀', label: 'Bum',        color: '#f87171', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)' },
+}
+
+function finishTitle(finishIdx: number, totalPlayers: number): string {
+  if (finishIdx === 0) return 'president'
+  if (finishIdx === 1 && totalPlayers >= 4) return 'vp'
+  if (finishIdx === totalPlayers - 1) return 'bum'
+  if (finishIdx === totalPlayers - 2 && totalPlayers >= 4) return 'vb'
+  return 'neutral'
+}
+
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd']
   const v = n % 100
@@ -349,12 +365,16 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {hasFinished ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                      style={{ background: 'rgba(74,222,128,0.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)' }}>
-                      Done #{finishIdx + 1}
-                    </span>
-                  ) : hasPassed ? (
+                  {hasFinished ? (() => {
+                    const t = FINISH_TITLE[finishTitle(finishIdx, gameState.players.length)]
+                    return (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
+                        style={{ background: t.bg, color: t.color, border: `1px solid ${t.border}` }}>
+                        <span>{t.icon}</span>
+                        <span>{t.label}</span>
+                      </span>
+                    )
+                  })() : hasPassed ? (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                       style={{ background: 'var(--surface-mid)', color: 'var(--text-dim)', border: '1px solid var(--border)' }}>
                       Passed
