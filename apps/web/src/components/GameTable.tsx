@@ -71,6 +71,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const [pendingKick, setPendingKick] = useState<{ id: string; name: string } | null>(null)
   const [confirmRestart, setConfirmRestart] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
+  const [confirmEndRoom, setConfirmEndRoom] = useState(false)
   const exchangeBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rummyGoOutErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const c8sErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -272,7 +273,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           {isHost ? (
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <button
-                onClick={() => send({ type: 'end_game' })}
+                onClick={() => setConfirmEndRoom(true)}
                 title="End room"
                 className="flex items-center justify-center w-8 h-8 rounded-full transition-all active:scale-95 text-sm font-bold"
                 style={{
@@ -1104,6 +1105,44 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                 style={{ background: 'rgba(245,158,11,0.12)', color: 'var(--accent)', border: '1px solid rgba(245,158,11,0.3)' }}
               >
                 Restart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* End room confirmation modal (host) */}
+      {confirmEndRoom && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-6"
+          onClick={() => setConfirmEndRoom(false)}
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+        >
+          <div
+            className="w-full max-w-xs rounded-2xl p-6 flex flex-col gap-4"
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <p className="text-sm text-center" style={{ color: 'var(--text)' }}>
+              End the room for everyone?
+            </p>
+            <p className="text-[11px] text-center" style={{ color: 'var(--text-muted)' }}>
+              All players will be sent back to the home screen.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmEndRoom(false)}
+                className="flex-1 text-xs font-semibold py-2 rounded-xl"
+                style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { send({ type: 'end_game' }); setConfirmEndRoom(false) }}
+                className="flex-1 text-xs font-semibold py-2 rounded-xl"
+                style={{ background: 'rgba(229,62,62,0.12)', color: '#fc8181', border: '1px solid rgba(229,62,62,0.25)' }}
+              >
+                End Room
               </button>
             </div>
           </div>
