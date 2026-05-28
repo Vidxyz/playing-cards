@@ -302,6 +302,7 @@ export class RoomDO implements DurableObject {
     if (wasTheirTurn && gs.phase === 'playing' && gs.turnOrder.length > 0) {
       if (gs.gameType === 'blackjack') {
         if (this.allBlackjackPlayersDone(gs)) {
+          gs.players = gs.players.filter(p => p.id !== playerId)
           await this.saveState(gs)
           await this.broadcastState(gs)
           await this.handleBlackjackDealerPlay(gs)
@@ -314,6 +315,10 @@ export class RoomDO implements DurableObject {
         gs.currentTurnPlayerId = gs.turnOrder[nextIdx] ?? null
       }
     }
+
+    // All game-specific cleanup (handlePlayerLeave) is done — now drop the player from the
+    // visible roster so the UI stops showing them as "leaving 0s".
+    gs.players = gs.players.filter(p => p.id !== playerId)
 
     await this.saveState(gs)
     await this.broadcastState(gs)
