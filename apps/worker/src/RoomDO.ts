@@ -114,8 +114,6 @@ export class RoomDO implements DurableObject {
   private state: DurableObjectState
   private gameState: GameState | null = null
   private drawPile: Card[] = []
-  // Grace-period timers: if a player reconnects before the timer fires, the leave is cancelled.
-  private leaveTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
 
   constructor(state: DurableObjectState) {
     this.state = state
@@ -133,7 +131,7 @@ export class RoomDO implements DurableObject {
       this.state.acceptWebSocket(server, [playerId])
 
       // Refresh expiry alarm
-      await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS)
+      await this.setRoomExpiry()
 
       return new Response(null, { status: 101, webSocket: client })
     }
@@ -144,7 +142,7 @@ export class RoomDO implements DurableObject {
       const code = url.searchParams.get('code') || generateRoomCode()
       if (!this.gameState) {
         await this.saveState(makeInitialState(code))
-        await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS)
+        await this.setRoomExpiry()
       }
       return new Response('OK', { status: 200 })
     }
@@ -196,22 +194,39 @@ export class RoomDO implements DurableObject {
     await this.saveState(gs)
     await this.broadcastState(gs)
 
-    // Cancel any existing timer for this player (e.g. rapid reconnect-disconnect cycle)
-    this.cancelLeaveTimer(playerId)
-
-    // After 15 s with no reconnect, treat the disconnect as a permanent leave.
-    const timer = setTimeout(() => {
-      this.leaveTimers.delete(playerId)
-      this.applyPlayerLeave(playerId).catch(() => {/* DO may have been torn down */})
-    }, 15_000)
-    this.leaveTimers.set(playerId, timer)
+    // Schedule a durable leave: overwrite any existing entry (handles rapid reconnect-disconnect).
+    // Using storage + alarm rather than setTimeout so it survives DO hibernation.
+    const leaves = (await this.state.storage.get<Record<string, number>>('pendingLeaves')) ?? {}
+    leaves[playerId] = Date.now() + 15_000
+    await this.state.storage.put('pendingLeaves', leaves)
+    await this.scheduleNextAlarm()
   }
 
-  private cancelLeaveTimer(playerId: string): void {
-    const t = this.leaveTimers.get(playerId)
-    if (t !== undefined) {
-      clearTimeout(t)
-      this.leaveTimers.delete(playerId)
+  private async cancelLeaveTimer(playerId: string): Promise<void> {
+    const leaves = (await this.state.storage.get<Record<string, number>>('pendingLeaves')) ?? {}
+    if (leaves[playerId] !== undefined) {
+      delete leaves[playerId]
+      await this.state.storage.put('pendingLeaves', leaves)
+      await this.scheduleNextAlarm()
+    }
+  }
+
+  private async setRoomExpiry(): Promise<void> {
+    const expiresAt = Date.now() + ROOM_TTL_MS
+    await this.state.storage.put('roomExpiresAt', expiresAt)
+    await this.scheduleNextAlarm()
+  }
+
+  private async scheduleNextAlarm(): Promise<void> {
+    const [leaves, roomExpiresAt] = await Promise.all([
+      this.state.storage.get<Record<string, number>>('pendingLeaves'),
+      this.state.storage.get<number>('roomExpiresAt'),
+    ])
+    const times: number[] = []
+    if (roomExpiresAt) times.push(roomExpiresAt)
+    if (leaves) times.push(...Object.values(leaves))
+    if (times.length > 0) {
+      await this.state.storage.setAlarm(Math.min(...times))
     }
   }
 
@@ -408,9 +423,29 @@ export class RoomDO implements DurableObject {
   }
 
   async alarm(): Promise<void> {
-    // Room expired — kick everyone and clear storage
-    await this.broadcast({ type: 'kicked', reason: 'Room expired' }, null)
-    await this.state.storage.deleteAll()
+    const now = Date.now()
+
+    // Process any leave timers that have come due
+    const leaves = (await this.state.storage.get<Record<string, number>>('pendingLeaves')) ?? {}
+    const due = Object.entries(leaves).filter(([, fireAt]) => fireAt <= now)
+    if (due.length > 0) {
+      for (const [pid] of due) delete leaves[pid]
+      await this.state.storage.put('pendingLeaves', leaves)
+      for (const [pid] of due) {
+        await this.applyPlayerLeave(pid).catch(() => {})
+      }
+    }
+
+    // Check room expiry
+    const roomExpiresAt = await this.state.storage.get<number>('roomExpiresAt')
+    if (roomExpiresAt && now >= roomExpiresAt) {
+      await this.broadcast({ type: 'kicked', reason: 'Room expired' }, null)
+      await this.state.storage.deleteAll()
+      return
+    }
+
+    // Reschedule for any remaining pending items
+    await this.scheduleNextAlarm()
   }
 
   private async handleEvent(playerId: string, ws: WebSocket, event: ClientEvent): Promise<void> {
@@ -764,7 +799,7 @@ export class RoomDO implements DurableObject {
   private async handleJoin(playerId: string, ws: WebSocket, name: string): Promise<void> {
     // Register session and cancel any pending leave timer for this player
     this.sessions.set(playerId, { ws, playerId })
-    this.cancelLeaveTimer(playerId)
+    await this.cancelLeaveTimer(playerId)
 
     let gs = await this.loadState()
 
@@ -1819,7 +1854,7 @@ export class RoomDO implements DurableObject {
   }
 
   private async handleKickPlayer(gs: GameState, targetPlayerId: string): Promise<void> {
-    this.cancelLeaveTimer(targetPlayerId)
+    await this.cancelLeaveTimer(targetPlayerId)
 
     // Tell the kicked player they've been removed, then close their connection so
     // they cannot receive the subsequent broadcastState (which would overwrite the
