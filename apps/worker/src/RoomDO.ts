@@ -310,10 +310,11 @@ export class RoomDO implements DurableObject {
     if (gs.gameType === 'president') {
       gs.presidentPassedIds = gs.presidentPassedIds.filter(id => id !== pid)
 
-      // Disconnecting players count as finishing at their current position.
-      // Kicked players are removed entirely — don't assign them a role.
-      if (redistributeCards && !gs.presidentFinishOrder.includes(pid)) {
-        gs.presidentFinishOrder.push(pid)
+      // Leavers/disconnects are assigned neutral directly — they do not enter the
+      // finish-order race, so early disconnects can never earn President or VP.
+      // Kicked players (redistributeCards=false) get no role entry at all.
+      if (redistributeCards && !gs.presidentFinishOrder.includes(pid) && !gs.presidentRoles[pid]) {
+        gs.presidentRoles[pid] = 'neutral'
       }
 
       // Auto-complete any pending exchange entry they owe
@@ -337,9 +338,15 @@ export class RoomDO implements DurableObject {
       // If only one (or zero) active players remain, end the round
       if (gs.turnOrder.length <= 1 && gs.phase === 'playing') {
         for (const p of gs.players) {
-          if (!gs.presidentFinishOrder.includes(p.id)) gs.presidentFinishOrder.push(p.id)
+          // Skip players who already left (have a manually-set neutral role) — they
+          // don't get a finish position and can't accidentally earn a good title.
+          if (!gs.presidentFinishOrder.includes(p.id) && !gs.presidentRoles[p.id]) {
+            gs.presidentFinishOrder.push(p.id)
+          }
         }
-        gs.presidentRoles = assignRoles(gs.presidentFinishOrder, gs.players.length)
+        // Merge so manually-set neutral entries (leavers) survive the role assignment.
+        const assigned = assignRoles(gs.presidentFinishOrder, gs.players.length)
+        gs.presidentRoles = { ...gs.presidentRoles, ...assigned }
         gs.phase = 'round-over'
       }
 
