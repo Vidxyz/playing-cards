@@ -46,7 +46,7 @@ export default function RoomPage({ params }: { params: Promise<{ code: string }>
 
 function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSession }) {
   const router = useRouter()
-  const { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send, errorMsg } = useRoom(
+  const { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send, errorMsg, restartNotice } = useRoom(
     roomCode,
     session.playerId,
     session.name,
@@ -195,6 +195,8 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
   return (
     <>
       {renderMain()}
+
+      {/* Host transfer toast */}
       {hostToast && (
         <div className="fixed top-4 inset-x-0 z-[100] flex justify-center pointer-events-none px-4">
           <div
@@ -208,6 +210,28 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
           >
             <span>👑</span>
             <span>{hostToast}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Round restarted overlay */}
+      {restartNotice && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center pointer-events-none px-6">
+          <div
+            className="flex flex-col items-center gap-3 rounded-3xl px-8 py-6 text-center"
+            style={{
+              background: 'var(--surface-hi)',
+              border: '1px solid var(--border-hi)',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+            }}
+          >
+            <span style={{ fontSize: 36 }}>🔄</span>
+            <div>
+              <p className="font-bold text-base" style={{ color: 'var(--text)' }}>Round Restarted</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                {restartNotice} restarted the round — cards are being redealt
+              </p>
+            </div>
           </div>
         </div>
       )}

@@ -272,40 +272,43 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <button
                 onClick={() => send({ type: 'end_game' })}
-                className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
+                title="End room"
+                className="flex items-center justify-center w-8 h-8 rounded-full transition-all active:scale-95 text-sm font-bold"
                 style={{
                   background: 'rgba(229,62,62,0.12)',
                   color: '#fc8181',
                   border: '1px solid rgba(229,62,62,0.25)',
                 }}
               >
-                End
+                ✕
               </button>
               {gameState.phase !== 'lobby' && gameState.phase !== 'game-over' && (
                 <button
                   onClick={() => setConfirmRestart(true)}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
+                  title="Restart round"
+                  className="flex items-center justify-center w-8 h-8 rounded-full transition-all active:scale-95 text-sm"
                   style={{
                     background: 'rgba(245,158,11,0.1)',
                     color: 'var(--accent)',
                     border: '1px solid rgba(245,158,11,0.25)',
                   }}
                 >
-                  Restart
+                  ↺
                 </button>
               )}
             </div>
           ) : (
             <button
               onClick={onLeave}
-              className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 flex-shrink-0"
+              title="Leave game"
+              className="flex items-center justify-center w-8 h-8 rounded-full transition-all active:scale-95 text-sm font-bold flex-shrink-0"
               style={{
                 background: 'var(--surface-mid)',
                 color: 'var(--text-muted)',
                 border: '1px solid var(--border)',
               }}
             >
-              Leave
+              ←
             </button>
           )}
 
@@ -323,17 +326,18 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
               <TopBtn
                 onClick={() => !myHasPassed && send({ type: 'pass_turn' })}
                 disabled={myHasPassed}
+                wide
               >
                 {gameType === 'bluff' && myHasPassed ? 'Passed' : 'Pass'}
               </TopBtn>
             )}
             {(gameType === 'cambio' || gameType === 'bluff' || gameType === 'president' || gameType === 'blackjack' || gameType === 'poker' || gameType === 'go-fish' || gameType === 'rummy' || gameType === 'crazy-eights') && (
-              <TopBtn onClick={() => setShowTutorialFor(gameType)}>?</TopBtn>
+              <TopBtn onClick={() => setShowTutorialFor(gameType)} title="How to play">?</TopBtn>
             )}
-            <TopBtn onClick={() => setShowScores(true)}>Scores</TopBtn>
+            <TopBtn onClick={() => setShowScores(true)} title="Scores">🏆</TopBtn>
             {isHost && gameType !== 'president' && gameType !== 'poker' && gameType !== 'blackjack' && gameType !== 'go-fish' && gameType !== 'rummy' && gameType !== 'crazy-eights' && (
-              <TopBtn onClick={() => send({ type: 'next_round' })} accent>
-                Next
+              <TopBtn onClick={() => send({ type: 'next_round' })} accent title="Next round">
+                ▶
               </TopBtn>
             )}
             <ThemeToggle compact />
@@ -1328,14 +1332,15 @@ function BluffHistoryLog({
 
 /* ── Small helper components ─────────────────────────────────── */
 
-function TopBtn({ children, onClick, accent, disabled }: {
-  children: React.ReactNode; onClick: () => void; accent?: boolean; disabled?: boolean
+function TopBtn({ children, onClick, accent, disabled, wide, title }: {
+  children: React.ReactNode; onClick: () => void; accent?: boolean; disabled?: boolean; wide?: boolean; title?: string
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
+      title={title}
+      className={`font-semibold transition-all active:scale-95 flex items-center justify-center ${wide ? 'text-xs px-3 py-1.5 rounded-full' : 'text-base w-8 h-8 rounded-full'}`}
       style={{
         background: accent ? 'var(--accent-dim)' : 'var(--surface-mid)',
         color: accent ? 'var(--accent)' : disabled ? 'var(--text-dim)' : 'var(--text-muted)',

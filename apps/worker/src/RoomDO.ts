@@ -1881,6 +1881,10 @@ export class RoomDO implements DurableObject {
   private async handleRestartRound(gs: GameState): Promise<void> {
     if (!gs.gameType) return
 
+    // Notify all players before the new deal state arrives so they see the popup
+    const host = gs.players.find(p => p.id === gs.hostId)
+    await this.broadcast({ type: 'round_restarted', hostName: host?.name ?? 'Host' }, null)
+
     // Reset per-player round state without accumulating into totals
     for (const player of gs.players) {
       player.trickCount = 0

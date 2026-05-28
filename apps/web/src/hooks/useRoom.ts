@@ -21,6 +21,7 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
   // Initial-deal peeks for Cambio: held until the player taps "ready", then shown for 3s client-side
   const [initialPeeks, setInitialPeeks] = useState<PeekResult[]>([])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [restartNotice, setRestartNotice] = useState<string | null>(null)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const socketRef = useRef<RoomSocket | null>(null)
   const joinedRef = useRef(false)
@@ -61,6 +62,9 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
           setPeekResults(prev => prev.filter(p => !(p.cardId === entry.cardId && p.zoneId === entry.zoneId)))
         }, duration)
       }
+    } else if (event.type === 'round_restarted') {
+      setRestartNotice(event.hostName)
+      setTimeout(() => setRestartNotice(null), 3000)
     } else if (event.type === 'kicked') {
       // Persist informational reasons (disconnect, expiry) so home page can show them.
       // 'Game ended by host' is intentional — no notification needed.
@@ -102,5 +106,5 @@ export function useRoom(roomCode: string, playerId: string, playerName: string) 
 
   const clearInitialPeeks = useCallback(() => setInitialPeeks([]), [])
 
-  return { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send, errorMsg }
+  return { gameState, status, lastAction, peekResults, initialPeeks, clearInitialPeeks, send, errorMsg, restartNotice }
 }

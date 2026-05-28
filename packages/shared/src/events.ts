@@ -69,3 +69,4 @@ export type ServerEvent =
   | { type: 'error'; message: string }
   | { type: 'kicked'; reason: string }
   | { type: 'peek_result'; cardId: string; zoneId: string; rank: string; suit: string; duration?: number; fromInitialDeal?: boolean }
+  | { type: 'round_restarted'; hostName: string }
