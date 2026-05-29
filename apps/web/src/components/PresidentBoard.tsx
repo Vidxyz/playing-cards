@@ -144,12 +144,15 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
     if (idx === 0) role = 'president'
     else if (idx === 1 && totalPlayers >= 4) role = 'vp'
 
-    setFinishBanner({ position: idx + 1, role })
     if (finishTimerRef.current) clearTimeout(finishTimerRef.current)
+    // Delay the overlay so the last card played remains visible for a moment first
     finishTimerRef.current = setTimeout(() => {
-      setFinishBanner(null)
-      finishTimerRef.current = null
-    }, 3500)
+      setFinishBanner({ position: idx + 1, role })
+      finishTimerRef.current = setTimeout(() => {
+        setFinishBanner(null)
+        finishTimerRef.current = null
+      }, 3500)
+    }, 2000)
   }, [gameState.presidentFinishOrder, myPlayerId, gameState.players.length, gameState.presidentExchangePhase])
 
   const combo = gameState.presidentCombo
@@ -514,10 +517,10 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
         )
       })()}
 
-      {/* Exchange lost-cards overlay — shown to bum/VB when their cards are taken */}
+      {/* Exchange lost-cards overlay — shown to bum/VB while waiting for cards to be returned */}
       {exchangeOverlay && iAmGiver && !myExchangeEntry && (() => {
         const myEntry = exchangePhase?.find(e => e.recipientId === myPlayerId)
-        if (!myEntry) return null
+        if (!myEntry || myEntry.done) return null  // hide once president has returned cards
         return (
           <div style={{
             position: 'fixed', inset: 0, zIndex: 810,

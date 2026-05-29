@@ -72,9 +72,11 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
   const [confirmRestart, setConfirmRestart] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmEndRoom, setConfirmEndRoom] = useState(false)
+  const [postExchangeHighlightIds, setPostExchangeHighlightIds] = useState<string[]>([])
   const exchangeBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rummyGoOutErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const c8sErrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const postExchangeHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const gameStateRef = useRef(gameState)
   const bluffPileCountRef = useRef(0)
 
@@ -136,6 +138,20 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
       return () => clearTimeout(t)
     }
   }, [lastAction])
+
+  // When the bum/VB's exchange entry becomes done, highlight the cards they received.
+  // No cleanup return — intentionally let the timer run even when exchange phase clears,
+  // following the same pattern as the burn timer in PresidentBoard.
+  const myRecipientEntry = gameState.presidentExchangePhase?.find(e => e.recipientId === myPlayerId) ?? null
+  const myRecipientEntryDone = myRecipientEntry?.done ?? false
+  useEffect(() => {
+    if (myRecipientEntryDone && (myRecipientEntry?.returnedCardIds.length ?? 0) > 0) {
+      const ids = myRecipientEntry!.returnedCardIds
+      setPostExchangeHighlightIds(ids)
+      if (postExchangeHighlightTimerRef.current) clearTimeout(postExchangeHighlightTimerRef.current)
+      postExchangeHighlightTimerRef.current = setTimeout(() => setPostExchangeHighlightIds([]), 3500)
+    }
+  }, [myRecipientEntryDone]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show exchange banner only after the "Cards Received" overlay has auto-dismissed (3.5s)
   useEffect(() => {
@@ -857,7 +873,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
                   : isInDiscardPhase
                     ? 'Discard'
                     : undefined}
-                highlightCardIds={isInExchangePhase ? (presidentExchangeEntry?.receivedCardIds ?? []) : []}
+                highlightCardIds={isInExchangePhase ? (presidentExchangeEntry?.receivedCardIds ?? []) : myRecipientEntryDone ? (myRecipientEntry?.returnedCardIds ?? postExchangeHighlightIds) : postExchangeHighlightIds}
                 playableCardIds={c8sPlayableIds}
               />
             ))

@@ -128,7 +128,8 @@ export interface GameState {
     recipientId: string    // bum/vb — receives returned cards
     cardsOwed: number      // how many to return
     done: boolean
-    receivedCardIds: string[]  // cards they received (for animation)
+    receivedCardIds: string[]  // cards president/vp received from bum/vb (for animation)
+    returnedCardIds: string[]  // cards bum/vb received back from president/vp (for animation)
     giverRole: string      // 'bum' | 'vb' — label for display
   }[] | null
   // Go Fish-specific

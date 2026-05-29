@@ -500,8 +500,26 @@ export class RoomDO implements DurableObject {
         if (gs.gameType === 'euchre' && gs.euchrePhase === 'playing') {
           this.handleEuchreTrickPlay(gs, player, event.cardIds[0], ws)
         } else if (gs.gameType === 'president') {
-          const burnNextPlayer = this.handlePresidentPlay(gs, player, event.cardIds, ws, event.wildRank)
-          if (burnNextPlayer !== undefined) {
+          const presidentPlayResult = this.handlePresidentPlay(gs, player, event.cardIds, ws, event.wildRank)
+          if (presidentPlayResult === null) {
+            // Game over: show final state so players see the finishing title before results
+            await this.saveState(gs)
+            await this.broadcastState(gs)
+            await new Promise<void>(r => setTimeout(r, 4000))
+            const playPile = gs.zones.find(z => z.id === 'play-pile')
+            const cleared  = gs.zones.find(z => z.id === 'cleared')
+            if (playPile && cleared && playPile.cards.length > 0) {
+              cleared.cards.push(...playPile.cards)
+              playPile.cards = []
+            }
+            gs.presidentCombo    = null
+            gs.presidentRunPlays = []
+            gs.phase = 'round-over'
+            await this.saveState(gs)
+            await this.broadcastState(gs)
+            return
+          }
+          if (presidentPlayResult !== undefined) {
             // Two-phase burn: show cards on table first, then clear after delay
             await this.saveState(gs)
             await this.broadcastState(gs)
@@ -509,7 +527,7 @@ export class RoomDO implements DurableObject {
             const playPile = gs.zones.find(z => z.id === 'play-pile')
             const cleared  = gs.zones.find(z => z.id === 'cleared')
             if (playPile && cleared) { cleared.cards.push(...playPile.cards); playPile.cards = [] }
-            this.endPresidentRound(gs, burnNextPlayer)
+            this.endPresidentRound(gs, presidentPlayResult)
             await this.saveState(gs)
             await this.broadcastState(gs)
             return
@@ -548,13 +566,32 @@ export class RoomDO implements DurableObject {
 
       case 'president_run_discard':
         if (gs.gameType === 'president') {
-          this.handlePresidentRunDiscard(gs, player, event.cardIds, ws)
+          const runDiscardGameOver = this.handlePresidentRunDiscard(gs, player, event.cardIds, ws)
+          if (runDiscardGameOver) {
+            await this.saveState(gs)
+            await this.broadcastState(gs)
+            await new Promise<void>(r => setTimeout(r, 4000))
+            gs.phase = 'round-over'
+            await this.saveState(gs)
+            await this.broadcastState(gs)
+            return
+          }
         }
         break
 
       case 'president_exchange_return':
         if (gs.gameType === 'president') {
-          this.handlePresidentExchangeReturn(gs, player, event.cardIds, ws)
+          const exchangeAllDone = this.handlePresidentExchangeReturn(gs, player, event.cardIds, ws)
+          if (exchangeAllDone) {
+            // Broadcast with returnedCardIds still populated so clients can read which
+            // cards the bum/VB received.  A short pause ensures the two messages arrive
+            // as separate browser events — React 18 batching would otherwise merge them
+            // into one render and the client would never see the intermediate done state.
+            await this.saveState(gs)
+            await this.broadcastState(gs)
+            await new Promise<void>(r => setTimeout(r, 150))
+            gs.presidentExchangePhase = null
+          }
         }
         break
 
@@ -1007,7 +1044,7 @@ export class RoomDO implements DurableObject {
             const idx = bumHand.cards.findIndex(c => c.id === card.id)
             if (idx !== -1) { bumHand.cards.splice(idx, 1); presHand.cards.push(card) }
           }
-          exchangeEntries.push({ playerId: presId, recipientId: bumId, cardsOwed: exchangeCount, done: false, receivedCardIds, giverRole: 'bum' })
+          exchangeEntries.push({ playerId: presId, recipientId: bumId, cardsOwed: exchangeCount, done: false, receivedCardIds, returnedCardIds: [], giverRole: 'bum' })
         }
       }
       if (vpId && vbId) {
@@ -1019,7 +1056,7 @@ export class RoomDO implements DurableObject {
             const idx = vbHand.cards.findIndex(c => c.id === card.id)
             if (idx !== -1) { vbHand.cards.splice(idx, 1); vpHand.cards.push(card) }
           }
-          exchangeEntries.push({ playerId: vpId, recipientId: vbId, cardsOwed: 1, done: false, receivedCardIds, giverRole: 'vb' })
+          exchangeEntries.push({ playerId: vpId, recipientId: vbId, cardsOwed: 1, done: false, receivedCardIds, returnedCardIds: [], giverRole: 'vb' })
         }
       }
 
@@ -2226,7 +2263,7 @@ export class RoomDO implements DurableObject {
 
   // ── President handlers ────────────────────────────────────────
 
-  private handlePresidentPlay(gs: GameState, player: Player, cardIds: string[], ws: WebSocket, wildRank?: string): string | undefined {
+  private handlePresidentPlay(gs: GameState, player: Player, cardIds: string[], ws: WebSocket, wildRank?: string): string | null | undefined {
     if (gs.presidentExchangePhase) {
       this.sendTo(ws, { type: 'error', message: 'Complete the card exchange first' })
       return
@@ -2316,15 +2353,9 @@ export class RoomDO implements DurableObject {
         if (!gs.presidentFinishOrder.includes(p.id)) gs.presidentFinishOrder.push(p.id)
       }
       gs.presidentRoles = assignRoles(gs.presidentFinishOrder, gs.players.length)
-      gs.phase = 'round-over'
-      // Game-ending burn: clear pile immediately (results screen shows next, no animation needed)
-      if (burn) {
-        const cleared = gs.zones.find(z => z.id === 'cleared')
-        if (playPile && cleared) { cleared.cards.push(...playPile.cards); playPile.cards = [] }
-        gs.presidentCombo    = null
-        gs.presidentRunPlays = []
-      }
-      return undefined
+      // Return null to signal game over — caller will broadcast state, wait for players
+      // to see the final title, then set round-over.
+      return null
     }
 
     if (burn) {
@@ -2486,24 +2517,24 @@ export class RoomDO implements DurableObject {
     gs.currentTurnPlayerId = nextPlayerId
   }
 
-  private handlePresidentRunDiscard(gs: GameState, player: Player, cardIds: string[], ws: WebSocket): void {
+  private handlePresidentRunDiscard(gs: GameState, player: Player, cardIds: string[], ws: WebSocket): boolean {
     const phase = gs.presidentDiscardPhase
-    if (!phase) return
+    if (!phase) return false
     const entry = phase.find(d => d.playerId === player.id && !d.done)
-    if (!entry) return
+    if (!entry) return false
 
     if (cardIds.length > 0) {
       if (cardIds.length > entry.cardsNeeded) {
         this.sendTo(ws, { type: 'error', message: `Discard at most ${entry.cardsNeeded} card${entry.cardsNeeded !== 1 ? 's' : ''}` })
-        return
+        return false
       }
       const hand = gs.zones.find(z => z.id === `hand-${player.id}`)
-      if (!hand) { entry.done = true; return }
+      if (!hand) { entry.done = true; return false }
       for (const cardId of cardIds) {
         const idx = hand.cards.findIndex(c => c.id === cardId)
         if (idx === -1) {
           this.sendTo(ws, { type: 'error', message: 'Card not found in your hand' })
-          return
+          return false
         }
       }
       const discarded: string[] = []
@@ -2530,32 +2561,33 @@ export class RoomDO implements DurableObject {
           if (!gs.presidentFinishOrder.includes(p.id)) gs.presidentFinishOrder.push(p.id)
         }
         gs.presidentRoles = assignRoles(gs.presidentFinishOrder, gs.players.length)
-        gs.phase = 'round-over'
+        return true  // caller will delay before setting round-over
       }
     }
+    return false
   }
 
-  private handlePresidentExchangeReturn(gs: GameState, player: Player, cardIds: string[], ws: WebSocket): void {
+  private handlePresidentExchangeReturn(gs: GameState, player: Player, cardIds: string[], ws: WebSocket): boolean {
     const phase = gs.presidentExchangePhase
-    if (!phase) return
+    if (!phase) return false
     const entry = phase.find(e => e.playerId === player.id && !e.done)
     if (!entry) {
       this.sendTo(ws, { type: 'error', message: 'Not your turn to return cards' })
-      return
+      return false
     }
     if (cardIds.length !== entry.cardsOwed) {
       this.sendTo(ws, { type: 'error', message: `Must return exactly ${entry.cardsOwed} card${entry.cardsOwed !== 1 ? 's' : ''}` })
-      return
+      return false
     }
 
     const myHand = gs.zones.find(z => z.id === `hand-${player.id}`)
     const recipientHand = gs.zones.find(z => z.id === `hand-${entry.recipientId}`)
-    if (!myHand || !recipientHand) return
+    if (!myHand || !recipientHand) return false
 
     for (const cardId of cardIds) {
       if (!myHand.cards.find(c => c.id === cardId)) {
         this.sendTo(ws, { type: 'error', message: 'Card not in your hand' })
-        return
+        return false
       }
     }
 
@@ -2564,11 +2596,14 @@ export class RoomDO implements DurableObject {
       if (idx !== -1) {
         const [card] = myHand.cards.splice(idx, 1)
         recipientHand.cards.push(card)
+        entry.returnedCardIds.push(card.id)
       }
     }
 
     entry.done = true
-    if (phase.every(e => e.done)) gs.presidentExchangePhase = null
+    return phase.every(e => e.done)
+    // Caller is responsible for nulling presidentExchangePhase when this returns true,
+    // after doing an intermediate broadcast so clients can read returnedCardIds first.
   }
 
   // ── End President handlers ────────────────────────────────────

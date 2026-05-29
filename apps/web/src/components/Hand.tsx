@@ -306,15 +306,12 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
               >
                 {isHighlighted && (
                   <div style={{
-                    position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)',
-                    background: 'var(--accent)', color: '#000',
-                    fontSize: 9, fontWeight: 900, letterSpacing: '0.06em',
-                    borderRadius: 4, padding: '2px 5px',
-                    zIndex: 10, whiteSpace: 'nowrap',
-                    boxShadow: '0 0 6px color-mix(in srgb, var(--accent) 70%, transparent)',
-                  }}>
-                    NEW
-                  </div>
+                    position: 'absolute', inset: 0,
+                    borderRadius: 'var(--radius-card)',
+                    boxShadow: '0 0 10px 2px color-mix(in srgb, var(--accent) 60%, transparent)',
+                    border: '1.5px solid color-mix(in srgb, var(--accent) 80%, transparent)',
+                    zIndex: 9, pointerEvents: 'none',
+                  }} />
                 )}
                 {isPlayable && !isSelected && (
                   <div style={{
