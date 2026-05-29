@@ -360,44 +360,35 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
           </button>
           {arrangeMode && (
             <>
-              <button
-                onClick={() => { setArrangeSubMode('swap'); setMovingId(null) }}
-                className="text-xs px-2.5 py-1 rounded-full transition-all active:scale-95 flex-shrink-0"
+              {/* Segmented control — makes the either-or choice obvious */}
+              <div
+                className="flex items-center flex-shrink-0"
                 style={{
-                  background: arrangeSubMode === 'swap' ? 'var(--surface-hi)' : 'var(--surface-mid)',
-                  color: arrangeSubMode === 'swap' ? 'var(--text)' : 'var(--text-dim)',
-                  border: '1px solid ' + (arrangeSubMode === 'swap' ? 'var(--border-hi)' : 'var(--border)'),
-                  fontWeight: arrangeSubMode === 'swap' ? 700 : 400,
+                  background: 'var(--surface-mid)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 999,
+                  padding: 2,
                 }}
               >
-                Swap
-              </button>
-              <button
-                onClick={() => { setArrangeSubMode('slot'); setMovingId(null) }}
-                className="text-xs px-2.5 py-1 rounded-full transition-all active:scale-95 flex-shrink-0"
-                style={{
-                  background: arrangeSubMode === 'slot' ? 'var(--surface-hi)' : 'var(--surface-mid)',
-                  color: arrangeSubMode === 'slot' ? 'var(--text)' : 'var(--text-dim)',
-                  border: '1px solid ' + (arrangeSubMode === 'slot' ? 'var(--border-hi)' : 'var(--border)'),
-                  fontWeight: arrangeSubMode === 'slot' ? 700 : 400,
-                }}
-              >
-                Slot
-              </button>
-              {showAutoArrange && (
-                <button
-                  onClick={handleAutoArrange}
-                  className="text-xs px-2.5 py-1 rounded-full transition-all active:scale-95 flex-shrink-0"
-                  style={{
-                    background: 'var(--surface-mid)',
-                    color: 'var(--text-muted)',
-                    border: '1px solid var(--border)',
-                  }}
-                >
-                  Auto
-                </button>
-              )}
-              <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
+                {(['slot', 'swap'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => { setArrangeSubMode(mode); setMovingId(null) }}
+                    className="text-xs px-2.5 py-0.5 transition-all active:scale-95 capitalize"
+                    style={{
+                      borderRadius: 999,
+                      background: arrangeSubMode === mode ? 'var(--surface-hi)' : 'transparent',
+                      color: arrangeSubMode === mode ? 'var(--text)' : 'var(--text-dim)',
+                      fontWeight: arrangeSubMode === mode ? 700 : 400,
+                      border: 'none',
+                    }}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+
+              <span className="text-xs flex-1" style={{ color: 'var(--text-dim)' }}>
                 {movingId
                   ? arrangeSubMode === 'swap'
                     ? 'Tap another card to swap'
@@ -405,6 +396,20 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
                   : 'Tap a card to pick up'
                 }
               </span>
+
+              {showAutoArrange && (
+                <button
+                  onClick={handleAutoArrange}
+                  className="text-xs px-2.5 py-1 rounded-full transition-all active:scale-95 flex-shrink-0 ml-auto"
+                  style={{
+                    background: 'var(--surface-mid)',
+                    color: 'var(--text-dim)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  ✦ Auto
+                </button>
+              )}
             </>
           )}
         </div>
