@@ -367,6 +367,7 @@ export class RoomDO implements DurableObject {
         // Merge so manually-set neutral entries (leavers) survive the role assignment.
         const assigned = assignRoles(gs.presidentFinishOrder, gs.players.length)
         gs.presidentRoles = { ...gs.presidentRoles, ...assigned }
+        this.revealAllHands(gs)
         gs.phase = 'round-over'
       }
 
@@ -514,6 +515,7 @@ export class RoomDO implements DurableObject {
             }
             gs.presidentCombo    = null
             gs.presidentRunPlays = []
+            this.revealAllHands(gs)
             gs.phase = 'round-over'
             await this.saveState(gs)
             await this.broadcastState(gs)
@@ -571,6 +573,7 @@ export class RoomDO implements DurableObject {
             await this.saveState(gs)
             await this.broadcastState(gs)
             await new Promise<void>(r => setTimeout(r, 4000))
+            this.revealAllHands(gs)
             gs.phase = 'round-over'
             await this.saveState(gs)
             await this.broadcastState(gs)
@@ -1670,6 +1673,7 @@ export class RoomDO implements DurableObject {
     }
 
     gs.euchrePhase = null
+    this.revealAllHands(gs)
     gs.phase = 'round-over'
   }
 
@@ -2670,6 +2674,7 @@ export class RoomDO implements DurableObject {
       for (const p of gs.players) {
         p.roundScore = gs.goFishBooks[p.id]?.length ?? 0
       }
+      this.revealAllHands(gs)
       gs.phase = 'round-over'
       await this.saveState(gs)
       await this.broadcastState(gs)
@@ -2838,6 +2843,12 @@ export class RoomDO implements DurableObject {
     gs.phase = 'round-over'
     await this.saveState(gs)
     await this.broadcastState(gs)
+  }
+
+  private revealAllHands(gs: GameState): void {
+    for (const zone of gs.zones) {
+      if (zone.id.startsWith('hand-')) zone.visibility = 'face-up'
+    }
   }
 
   private rummyCardScore(card: Card): number {

@@ -83,6 +83,7 @@ export function BlackjackBoard({
   const otherPlayers = players.filter(p => p.id !== myPlayerId)
 
   const [showResults, setShowResults] = useState(false)
+  const [resultsExpanded, setResultsExpanded] = useState(true)
   const [dealerBustAnim, setDealerBustAnim] = useState(false)
   const prevPhaseRef = useRef<string | null>(null)
 
@@ -154,72 +155,84 @@ export function BlackjackBoard({
 
       {/* Round results — shown after bust animation completes (or immediately if no bust) */}
       {showResults && blackjackResults && (
-        <div className="flex flex-col items-center gap-3 w-full max-w-xs fade-in">
-          {dealerBust && (
-            <div className="w-full px-3 py-2 rounded-xl text-center"
-              style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
-              <span className="text-xs font-bold" style={{ color: '#f87171' }}>
-                Dealer busted with {dealerValue} — all surviving hands win
-              </span>
-            </div>
-          )}
-          <div className="flex flex-col gap-1.5 w-full">
-            {players.map(player => {
-              const mainResult = blackjackResults[player.id]
-              if (!mainResult) return null
-              const hasSplit = gameState.blackjackSplits?.includes(player.id) ?? false
-              const splitResult = hasSplit ? gameState.blackjackSplitResults?.[player.id] : undefined
-              const chips = blackjackChips?.[player.id] ?? 0
-              return (
-                <div key={player.id} className="flex items-center justify-between rounded-xl px-3 py-2"
-                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                  <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{player.name}</span>
-                  <div className="flex items-center gap-2">
-                    {hasSplit ? (
-                      <div className="flex flex-col items-end gap-0.5">
-                        <div className="flex items-center gap-1">
-                          <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>H1</span>
+        <div className="w-full max-w-xs fade-in rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-hi)' }}>
+          <button
+            onClick={() => setResultsExpanded(v => !v)}
+            className="w-full flex items-center justify-between px-3 py-2.5 transition-colors active:opacity-70"
+            style={{ background: 'var(--surface-hi)' }}
+          >
+            <span className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--text)' }}>Results</span>
+            <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{resultsExpanded ? '▲ hide' : '▼ show'}</span>
+          </button>
+          {resultsExpanded && (
+            <div className="flex flex-col gap-3 px-2 pb-2 pt-1">
+              {dealerBust && (
+                <div className="w-full px-3 py-2 rounded-xl text-center"
+                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
+                  <span className="text-xs font-bold" style={{ color: '#f87171' }}>
+                    Dealer busted with {dealerValue} — all surviving hands win
+                  </span>
+                </div>
+              )}
+              <div className="flex flex-col gap-1.5 w-full">
+                {players.map(player => {
+                  const mainResult = blackjackResults[player.id]
+                  if (!mainResult) return null
+                  const hasSplit = gameState.blackjackSplits?.includes(player.id) ?? false
+                  const splitResult = hasSplit ? gameState.blackjackSplitResults?.[player.id] : undefined
+                  const chips = blackjackChips?.[player.id] ?? 0
+                  return (
+                    <div key={player.id} className="flex items-center justify-between rounded-xl px-3 py-2"
+                      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                      <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{player.name}</span>
+                      <div className="flex items-center gap-2">
+                        {hasSplit ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>H1</span>
+                              <span className="text-[10px] font-bold" style={{ color: BJ_RESULT_COLOR[mainResult] }}>
+                                {BJ_RESULT_LABEL[mainResult]}
+                              </span>
+                            </div>
+                            {splitResult && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>H2</span>
+                                <span className="text-[10px] font-bold" style={{ color: BJ_RESULT_COLOR[splitResult] }}>
+                                  {BJ_RESULT_LABEL[splitResult]}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
                           <span className="text-[10px] font-bold" style={{ color: BJ_RESULT_COLOR[mainResult] }}>
                             {BJ_RESULT_LABEL[mainResult]}
                           </span>
-                        </div>
-                        {splitResult && (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>H2</span>
-                            <span className="text-[10px] font-bold" style={{ color: BJ_RESULT_COLOR[splitResult] }}>
-                              {BJ_RESULT_LABEL[splitResult]}
-                            </span>
-                          </div>
                         )}
+                        <div className="flex items-center gap-1">
+                          <ChipSvg size={12} color={chipColorFor(chips)} />
+                          <span className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>{chips}</span>
+                        </div>
                       </div>
-                    ) : (
-                      <span className="text-[10px] font-bold" style={{ color: BJ_RESULT_COLOR[mainResult] }}>
-                        {BJ_RESULT_LABEL[mainResult]}
-                      </span>
-                    )}
-                    <div className="flex items-center gap-1">
-                      <ChipSvg size={12} color={chipColorFor(chips)} />
-                      <span className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>{chips}</span>
                     </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          {isHost && (
-            <button
-              onClick={() => send({ type: 'next_round' })}
-              className="w-full py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
-              style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)' }}
-            >
-              Next Hand
-            </button>
+                  )
+                })}
+              </div>
+              {isHost && (
+                <button
+                  onClick={() => send({ type: 'next_round' })}
+                  className="w-full py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+                  style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)' }}
+                >
+                  Next Hand
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
 
       {/* Other players' hands (not me) */}
-      {otherPlayers.length > 0 && !showResults && (
+      {otherPlayers.length > 0 && (!showResults || !resultsExpanded) && (
         <div className="flex gap-5 justify-center flex-wrap">
           {otherPlayers.map(player => {
             const mainZone = gameState.zones.find(z => z.id === `hand-${player.id}`)

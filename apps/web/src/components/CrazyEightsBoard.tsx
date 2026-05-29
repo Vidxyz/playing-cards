@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { GameState, ClientEvent, Suit } from '@playing-cards/shared'
 import { Card } from './Card'
 import { PlayerStrip } from './PlayerStrip'
@@ -30,73 +31,7 @@ export function CrazyEightsBoard({ gameState, myPlayerId, send, isHost }: Props)
 
   // Round-over screen
   if (phase === 'round-over') {
-    const sorted = [...players].sort((a, b) => a.roundScore - b.roundScore)
-    const winner = sorted[0]
-    return (
-      <div className="flex-1 flex flex-col items-center gap-4 px-4 py-6 overflow-y-auto">
-        <div className="text-4xl">🎉</div>
-        <h2 className="font-black text-xl" style={{ color: 'var(--text)' }}>Round {roundNumber} Over</h2>
-        <div className="w-full max-w-sm flex flex-col gap-3">
-          {sorted.map((p, i) => {
-            const handZone = zones.find(z => z.id === `hand-${p.id}`)
-            const handCards = handZone?.cards ?? []
-            const isWinner = i === 0
-            return (
-              <div key={p.id}
-                className="flex flex-col gap-2 px-4 py-3 rounded-2xl"
-                style={{
-                  background: isWinner ? 'var(--accent-dim)' : 'var(--surface)',
-                  border: `1px solid ${isWinner ? 'var(--accent)' : 'var(--border)'}`,
-                }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold" style={{ color: 'var(--text-dim)' }}>#{i + 1}</span>
-                    <span className="font-bold text-sm" style={{ color: isWinner ? 'var(--accent)' : 'var(--text)' }}>
-                      {p.name}{p.id === myPlayerId ? ' (you)' : ''}
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-end leading-tight">
-                    <span className="font-black text-sm" style={{ color: isWinner ? 'var(--accent)' : 'var(--text)' }}>
-                      {isWinner ? 'went out' : `+${p.roundScore}`}
-                    </span>
-                    <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
-                      Total: {p.totalScore + p.roundScore}
-                    </span>
-                  </div>
-                </div>
-                {handCards.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {handCards.map(card => (
-                      <Card key={card.id} card={card} size="sm" />
-                    ))}
-                  </div>
-                )}
-                {handCards.length === 0 && !isWinner && (
-                  <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>no cards</p>
-                )}
-              </div>
-            )
-          })}
-        </div>
-        <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-          {winner.name} went out — others score their hand values
-        </p>
-        {isHost && (
-          <button
-            onClick={() => send({ type: 'next_round' })}
-            className="px-8 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-            style={{ background: 'var(--accent)', color: '#000' }}
-          >
-            Next Round
-          </button>
-        )}
-        {gameState.crazy8sBustedPlayerIds.length > 0 && (
-          <p className="text-[11px] text-center" style={{ color: 'var(--text-dim)' }}>
-            Bust threshold: {gameState.crazy8sMaxScore} pts
-          </p>
-        )}
-      </div>
-    )
+    return <CrazyEightsRoundOver gameState={gameState} myPlayerId={myPlayerId} isHost={isHost} send={send} />
   }
 
   // Game-over screen
@@ -286,6 +221,120 @@ export function CrazyEightsBoard({ gameState, myPlayerId, send, isHost }: Props)
         <p className="text-[11px] text-center" style={{ color: 'var(--text-dim)' }}>
           Play a matching card or tap the deck to draw
         </p>
+      )}
+    </div>
+  )
+}
+
+// ── Round-over screen ────────────────────────────────────────────
+
+function CrazyEightsRoundOver({ gameState, myPlayerId, isHost, send }: {
+  gameState: GameState
+  myPlayerId: string
+  isHost: boolean
+  send: (event: ClientEvent) => void
+}) {
+  const [scoresExpanded, setScoresExpanded] = useState(true)
+  const { players, zones, roundNumber } = gameState
+  const sorted = [...players].sort((a, b) => a.roundScore - b.roundScore)
+  const winner = sorted[0]
+
+  return (
+    <div className="flex-1 flex flex-col items-center gap-4 px-4 py-6 overflow-y-auto">
+      <div className="text-4xl">🎉</div>
+      <h2 className="font-black text-xl" style={{ color: 'var(--text)' }}>Round {roundNumber} Over</h2>
+
+      {/* Revealed hands for all players */}
+      <div className="w-full max-w-sm flex flex-col gap-3">
+        {sorted.map(p => {
+          const handZone = zones.find(z => z.id === `hand-${p.id}`)
+          const handCards = handZone?.cards ?? []
+          const isMe = p.id === myPlayerId
+          const isWinner = p.id === winner?.id
+          return (
+            <div key={p.id} className="flex flex-col gap-1.5 px-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
+                  {p.name}{isMe ? ' (you)' : ''}
+                </span>
+                {isWinner && <span className="text-[9px] font-black uppercase tracking-wide" style={{ color: 'var(--accent)' }}>went out</span>}
+                {!isWinner && p.roundScore > 0 && (
+                  <span className="text-[9px] font-semibold" style={{ color: '#fc8181' }}>+{p.roundScore} pts</span>
+                )}
+              </div>
+              {handCards.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {handCards.map(card => <Card key={card.id} card={card} size="sm" />)}
+                </div>
+              ) : (
+                <span className="text-xs italic" style={{ color: 'var(--text-dim)' }}>went out</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Collapsible scores */}
+      <div className="w-full max-w-sm rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-hi)' }}>
+        <button
+          onClick={() => setScoresExpanded(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2.5 transition-colors active:opacity-70"
+          style={{ background: 'var(--surface-hi)' }}
+        >
+          <span className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--text)' }}>Scores</span>
+          <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{scoresExpanded ? '▲ hide' : '▼ show'}</span>
+        </button>
+        {scoresExpanded && (
+          <div className="flex flex-col gap-1 px-2 pb-2 pt-1">
+            {sorted.map((p, i) => {
+              const isMe = p.id === myPlayerId
+              const isWin = i === 0
+              return (
+                <div key={p.id}
+                  className="flex items-center justify-between px-3 py-2 rounded-xl"
+                  style={{
+                    background: isWin ? 'var(--accent-dim)' : 'var(--surface-mid)',
+                    border: `1px solid ${isWin ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`,
+                  }}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold" style={{ color: isWin ? 'var(--accent)' : 'var(--text-dim)' }}>
+                      #{i + 1}
+                    </span>
+                    <span className="text-sm font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
+                      {p.name}{isMe ? ' (you)' : ''}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-end leading-tight">
+                    <span className="font-black text-sm" style={{ color: isWin ? 'var(--accent)' : 'var(--text)' }}>
+                      {isWin ? 'went out' : `+${p.roundScore}`}
+                    </span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                      Total: {p.totalScore + p.roundScore}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+        {winner?.name} went out — others score their hand values
+      </p>
+      {gameState.crazy8sBustedPlayerIds.length > 0 && (
+        <p className="text-[11px] text-center" style={{ color: 'var(--text-dim)' }}>
+          Bust threshold: {gameState.crazy8sMaxScore} pts
+        </p>
+      )}
+      {isHost && (
+        <button
+          onClick={() => send({ type: 'next_round' })}
+          className="px-8 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
+          style={{ background: 'var(--accent)', color: '#000' }}
+        >
+          Next Round
+        </button>
       )}
     </div>
   )

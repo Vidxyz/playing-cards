@@ -645,6 +645,8 @@ function PresidentResults({
   onNextRound: () => void
   onHome: () => void
 }) {
+  const [scoresExpanded, setScoresExpanded] = useState(true)
+
   const ROLE_EMOJI: Record<string, string> = {
     president: '👑', vp: '🥈', neutral: '😐', vb: '😬', bum: '💀',
   }
@@ -660,35 +662,82 @@ function PresidentResults({
     <div className="flex flex-col gap-3 w-full">
       <div className="text-center">
         <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--text-dim)' }}>Round Over</p>
-        <h3 className="font-black text-lg" style={{ color: 'var(--text)' }}>Final Standings</h3>
       </div>
-      {positions.map(({ id, pos, player, role }) => {
-        const isMe = id === myPlayerId
-        return (
-          <div
-            key={id}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl"
-            style={{
-              background: isMe ? 'var(--accent-dim)' : 'var(--surface)',
-              border: '1px solid ' + (isMe ? 'rgba(245,158,11,0.4)' : 'var(--border)'),
-            }}
-          >
-            <span className="font-black text-xl w-6 text-center tabular-nums" style={{ color: 'var(--text-dim)' }}>
-              {pos}
-            </span>
-            <span className="text-2xl">{ROLE_EMOJI[role] ?? '•'}</span>
-            <div className="flex-1">
-              <span className="font-semibold text-sm" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
-                {isMe ? 'You' : (player?.name ?? '?')}
-              </span>
+
+      {/* Revealed hands */}
+      <div className="flex flex-col gap-3">
+        {gameState.players.map(p => {
+          const handZone = gameState.zones.find(z => z.id === `hand-${p.id}`)
+          const cards = handZone?.cards ?? []
+          const isMe = p.id === myPlayerId
+          const role = gameState.presidentRoles[p.id]
+          return (
+            <div key={p.id} className="flex flex-col gap-1.5 px-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
+                  {isMe ? 'You' : p.name}
+                </span>
+                {role && (
+                  <span className="text-[9px] font-semibold" style={{ color: 'var(--text-dim)' }}>
+                    {ROLE_EMOJI[role]} {ROLE_LABEL[role] ?? role}
+                  </span>
+                )}
+              </div>
+              {cards.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {cards.map(card => <Card key={card.id} card={card} size="sm" />)}
+                </div>
+              ) : (
+                <span className="text-xs italic" style={{ color: 'var(--text-dim)' }}>went out</span>
+              )}
             </div>
-            <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>
-              {ROLE_LABEL[role] ?? role}
-            </span>
+          )
+        })}
+      </div>
+
+      {/* Collapsible standings */}
+      <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-hi)' }}>
+        <button
+          onClick={() => setScoresExpanded(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2.5 transition-colors active:opacity-70"
+          style={{ background: 'var(--surface-hi)' }}
+        >
+          <span className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--text)' }}>Final Standings</span>
+          <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{scoresExpanded ? '▲ hide' : '▼ show'}</span>
+        </button>
+        {scoresExpanded && (
+          <div className="flex flex-col gap-1 px-2 pb-2 pt-1">
+            {positions.map(({ id, pos, player, role }) => {
+              const isMe = id === myPlayerId
+              return (
+                <div
+                  key={id}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                  style={{
+                    background: isMe ? 'var(--accent-dim)' : 'var(--surface-mid)',
+                    border: '1px solid ' + (isMe ? 'rgba(245,158,11,0.4)' : 'var(--border)'),
+                  }}
+                >
+                  <span className="font-black text-base w-5 text-center tabular-nums" style={{ color: 'var(--text-dim)' }}>
+                    {pos}
+                  </span>
+                  <span className="text-xl">{ROLE_EMOJI[role] ?? '•'}</span>
+                  <div className="flex-1">
+                    <span className="font-semibold text-sm" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
+                      {isMe ? 'You' : (player?.name ?? '?')}
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>
+                    {ROLE_LABEL[role] ?? role}
+                  </span>
+                </div>
+              )
+            })}
           </div>
-        )
-      })}
-      <div className="flex gap-2 mt-2">
+        )}
+      </div>
+
+      <div className="flex gap-2">
         {isHost && (
           <button
             onClick={onNextRound}

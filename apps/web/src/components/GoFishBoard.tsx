@@ -295,48 +295,115 @@ export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
         </div>
       )}
 
-      {/* ── Round over leaderboard ── */}
+      {/* ── Round over ── */}
       {gameState.phase === 'round-over' && (
-        <div className="flex flex-col gap-2 px-4 pb-2">
-          <div className="text-center text-sm font-black tracking-widest uppercase fade-in" style={{ color: 'var(--accent)' }}>
-            🎉 Game Over!
-          </div>
-          <div className="flex flex-col gap-1">
-            {[...gameState.players]
-              .sort((a, b) => getBookCount(b.id) - getBookCount(a.id))
-              .map((p, i) => (
-                <div key={p.id}
-                  className={`flex items-center justify-between px-3 py-2 rounded-xl ${i === 0 ? 'book-pop' : ''}`}
-                  style={{
-                    background: i === 0 ? 'var(--accent-dim)' : 'var(--surface-hi)',
-                    border: `1px solid ${i === 0 ? 'rgba(245,158,11,0.3)' : 'var(--border-hi)'}`,
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold" style={{ color: i === 0 ? 'var(--accent)' : 'var(--text-dim)' }}>
-                      {i === 0 ? '🏆' : `#${i + 1}`}
-                    </span>
-                    <span className="text-sm font-bold" style={{ color: p.id === myPlayerId ? 'var(--accent)' : 'var(--text)' }}>
-                      {p.name}{p.id === myPlayerId ? ' (you)' : ''}
-                    </span>
-                  </div>
-                  <span className="text-sm font-black" style={{ color: i === 0 ? 'var(--accent)' : 'var(--text)' }}>
-                    {getBookCount(p.id)} book{getBookCount(p.id) !== 1 ? 's' : ''}
+        <GoFishRoundOver
+          gameState={gameState}
+          myPlayerId={myPlayerId}
+          isHost={isHost}
+          send={send}
+          getBookCount={getBookCount}
+          getBookRanks={getBookRanks}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Round-over screen ────────────────────────────────────────────
+
+function GoFishRoundOver({ gameState, myPlayerId, isHost, send, getBookCount, getBookRanks }: {
+  gameState: GameState
+  myPlayerId: string
+  isHost: boolean
+  send: (event: ClientEvent) => void
+  getBookCount: (pid: string) => number
+  getBookRanks: (pid: string) => string[]
+}) {
+  const [scoresExpanded, setScoresExpanded] = useState(true)
+  const sorted = [...gameState.players].sort((a, b) => getBookCount(b.id) - getBookCount(a.id))
+
+  return (
+    <div className="flex flex-col gap-3 px-4 pb-2 fade-in">
+      <div className="text-center text-sm font-black tracking-widest uppercase" style={{ color: 'var(--accent)' }}>
+        🎉 Game Over!
+      </div>
+
+      {/* Revealed hands for all players */}
+      <div className="flex flex-col gap-3">
+        {gameState.players.map(p => {
+          const handZone = gameState.zones.find(z => z.id === `hand-${p.id}`)
+          const cards = handZone?.cards ?? []
+          const isMe = p.id === myPlayerId
+          return (
+            <div key={p.id} className="flex flex-col gap-1.5 px-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
+                  {p.name}{isMe ? ' (you)' : ''}
+                </span>
+                <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>
+                  {getBookCount(p.id)} book{getBookCount(p.id) !== 1 ? 's' : ''}
+                </span>
+              </div>
+              {cards.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {cards.map(card => (
+                    <Card key={card.id} card={card} size="sm" />
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs italic" style={{ color: 'var(--text-dim)' }}>no cards left</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Collapsible leaderboard */}
+      <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-hi)' }}>
+        <button
+          onClick={() => setScoresExpanded(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2.5 transition-colors active:opacity-70"
+          style={{ background: 'var(--surface-hi)' }}
+        >
+          <span className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--text)' }}>Scores</span>
+          <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{scoresExpanded ? '▲ hide' : '▼ show'}</span>
+        </button>
+        {scoresExpanded && (
+          <div className="flex flex-col gap-1 px-2 pb-2 pt-1">
+            {sorted.map((p, i) => (
+              <div key={p.id}
+                className={`flex items-center justify-between px-3 py-2 rounded-xl ${i === 0 ? 'book-pop' : ''}`}
+                style={{
+                  background: i === 0 ? 'var(--accent-dim)' : 'var(--surface-mid)',
+                  border: `1px solid ${i === 0 ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`,
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold" style={{ color: i === 0 ? 'var(--accent)' : 'var(--text-dim)' }}>
+                    {i === 0 ? '🏆' : `#${i + 1}`}
+                  </span>
+                  <span className="text-sm font-bold" style={{ color: p.id === myPlayerId ? 'var(--accent)' : 'var(--text)' }}>
+                    {p.name}{p.id === myPlayerId ? ' (you)' : ''}
                   </span>
                 </div>
-              ))
-            }
+                <span className="text-sm font-black" style={{ color: i === 0 ? 'var(--accent)' : 'var(--text)' }}>
+                  {getBookCount(p.id)} book{getBookCount(p.id) !== 1 ? 's' : ''}
+                </span>
+              </div>
+            ))}
           </div>
-          {isHost && (
-            <button
-              onClick={() => send({ type: 'next_round' })}
-              className="w-full py-3 rounded-2xl font-black text-sm tracking-widest uppercase transition-all active:scale-95"
-              style={{ background: 'var(--accent)', color: '#000' }}
-            >
-              Play Again
-            </button>
-          )}
-        </div>
+        )}
+      </div>
+
+      {isHost && (
+        <button
+          onClick={() => send({ type: 'next_round' })}
+          className="w-full py-3 rounded-2xl font-black text-sm tracking-widest uppercase transition-all active:scale-95"
+          style={{ background: 'var(--accent)', color: '#000' }}
+        >
+          Play Again
+        </button>
       )}
     </div>
   )

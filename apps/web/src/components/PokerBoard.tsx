@@ -418,6 +418,7 @@ function PokerResults({
   onLeave: () => void
   playerColorMap: Record<string, string>
 }) {
+  const [standingsExpanded, setStandingsExpanded] = useState(true)
   const isGameOver = gameState.phase === 'game-over'
   const winners = gameState.pokerWinners ?? []
   const sortedByChips = [...gameState.players].sort(
@@ -534,33 +535,44 @@ function PokerResults({
         })}
       </div>}
 
-      {/* Chip standings */}
-      <div className="flex flex-col gap-1.5">
-        <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--text-dim)' }}>Chip Standings</p>
-        {sortedByChips.map((p, i) => {
-          const chips = gameState.pokerChips[p.id] ?? 0
-          const win = winners.find(w => w.playerId === p.id)
-          const pColor = playerColorMap[p.id] ?? '#888'
-          return (
-            <div key={p.id}
-              className="flex items-center justify-between rounded-xl px-3 py-2"
-              style={{
-                background: win ? `${pColor}12` : 'var(--surface)',
-                border: `1px solid ${win ? `${pColor}50` : 'var(--border)'}`,
-              }}>
-              <div className="flex items-center gap-2">
-                <span className="text-xs w-4 text-right" style={{ color: 'var(--text-dim)' }}>{i + 1}.</span>
-                <div style={{ width: 7, height: 7, borderRadius: '50%', background: pColor, flexShrink: 0 }} />
-                <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{p.name}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <ChipSvg size={12} color={chipColor(chips)} />
-                <span className="font-bold text-sm" style={{ color: win ? pColor : 'var(--text)' }}>{chips}</span>
-                {win && <span className="text-[10px] font-bold" style={{ color: pColor }}>+{win.amount}</span>}
-              </div>
-            </div>
-          )
-        })}
+      {/* Chip standings — collapsible */}
+      <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+        <button
+          onClick={() => setStandingsExpanded(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2.5 transition-colors active:opacity-70"
+          style={{ background: 'var(--surface)' }}
+        >
+          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--text-dim)' }}>Chip Standings</span>
+          <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{standingsExpanded ? '▲ hide' : '▼ show'}</span>
+        </button>
+        {standingsExpanded && (
+          <div className="flex flex-col gap-1 px-2 pb-2">
+            {sortedByChips.map((p, i) => {
+              const chips = gameState.pokerChips[p.id] ?? 0
+              const win = winners.find(w => w.playerId === p.id)
+              const pColor = playerColorMap[p.id] ?? '#888'
+              return (
+                <div key={p.id}
+                  className="flex items-center justify-between rounded-xl px-3 py-2"
+                  style={{
+                    background: win ? `${pColor}12` : 'var(--surface-mid)',
+                    border: `1px solid ${win ? `${pColor}50` : 'var(--border)'}`,
+                  }}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs w-4 text-right" style={{ color: 'var(--text-dim)' }}>{i + 1}.</span>
+                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: pColor, flexShrink: 0 }} />
+                    <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{p.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <ChipSvg size={12} color={chipColor(chips)} />
+                    <span className="font-bold text-sm" style={{ color: win ? pColor : 'var(--text)' }}>{chips}</span>
+                    {win && <span className="text-[10px] font-bold" style={{ color: pColor }}>+{win.amount}</span>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 pb-2 shrink-0">
