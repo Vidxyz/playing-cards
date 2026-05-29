@@ -64,6 +64,10 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
   const lastBurnTimestampRef = useRef<number | null>(null)
   const burnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const [passFlash, setPassFlash] = useState<string | null>(null)
+  const lastPassTimestampRef = useRef<number | null>(null)
+  const passTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const [finishBanner, setFinishBanner] = useState<FinishBanner | null>(null)
   const prevFinishIdxRef = useRef(-1)
   const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -101,9 +105,28 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
     // cannot cancel it when the second broadcast re-runs this effect.
   }, [gameState.lastAction, gameState.players, gameState.presidentCombo, myPlayerId])
 
+  useEffect(() => {
+    const action = gameState.lastAction
+    if (!action || action.type !== 'pass') return
+    if (action.timestamp === lastPassTimestampRef.current) return
+    lastPassTimestampRef.current = action.timestamp
+
+    const player = gameState.players.find(p => p.id === action.playerId)
+    const name = action.playerId === myPlayerId ? 'You' : (player?.name ?? 'Someone')
+    setPassFlash(name)
+
+    if (passTimerRef.current) clearTimeout(passTimerRef.current)
+    passTimerRef.current = setTimeout(() => {
+      setPassFlash(null)
+      passTimerRef.current = null
+    }, 2000)
+    // No cleanup return — same intentional pattern as burn timer
+  }, [gameState.lastAction, gameState.players, myPlayerId])
+
   // Clear timers on unmount
   useEffect(() => () => {
     if (burnTimerRef.current) clearTimeout(burnTimerRef.current)
+    if (passTimerRef.current) clearTimeout(passTimerRef.current)
     if (finishTimerRef.current) clearTimeout(finishTimerRef.current)
     if (exchangeOverlayTimerRef.current) clearTimeout(exchangeOverlayTimerRef.current)
   }, [])
@@ -230,6 +253,23 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
               {' '}cleared the pile!
             </span>
           )}
+        </div>
+      )}
+
+      {passFlash && (
+        <div
+          className="w-full py-2.5 rounded-xl text-center fade-in"
+          style={{
+            background: 'rgba(148,163,184,0.1)',
+            border: '1.5px solid rgba(148,163,184,0.35)',
+          }}
+        >
+          <span className="font-black tracking-widest text-sm" style={{ color: 'var(--text-muted)' }}>
+            ✋ PASS
+          </span>
+          <span className="text-sm ml-1.5" style={{ color: 'var(--text-muted)' }}>
+            {' — '}{passFlash} passed
+          </span>
         </div>
       )}
 
