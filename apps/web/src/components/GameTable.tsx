@@ -1558,11 +1558,12 @@ function CambioBoard({
     if (countdown <= 0) {
       clearInitialPeeks()
       setPeekPhase('idle')
+      send({ type: 'ready' })
       return
     }
     const t = setTimeout(() => setCountdown(c => c - 1), 1000)
     return () => clearTimeout(t)
-  }, [peekPhase, countdown, clearInitialPeeks])
+  }, [peekPhase, countdown, clearInitialPeeks, send])
 
   // Start/reset countdown whenever a mid-game peek result arrives
   useEffect(() => {
@@ -1677,6 +1678,7 @@ function CambioBoard({
   const handleDismissEarly = () => {
     clearInitialPeeks()
     setPeekPhase('idle')
+    send({ type: 'ready' })
   }
 
   const { cambioDrawn, cambioPower, cambioCaller } = gameState
@@ -1694,7 +1696,8 @@ function CambioBoard({
 
   const getPeek = (zoneId: string) => peekResults.find(pr => pr.zoneId === zoneId) ?? null
 
-  const canActOnDeck = isMyTurn && !cambioDrawn && !cambioPower
+  const allPlayersReady = gameState.players.every(p => p.isReady)
+  const canActOnDeck = isMyTurn && !cambioDrawn && !cambioPower && allPlayersReady
   const canDiscardDrawn = !!cambioDrawn
   const drawnHasPower = !!cambioDrawn && ['7', '8', '9', '10', 'J', 'Q', 'K'].includes(cambioDrawn.card.rank)
 
@@ -1769,6 +1772,7 @@ function CambioBoard({
       if (topDiscard) return 'Tap one of your cards twice to attempt a stick.'
       return null
     }
+    if (!allPlayersReady) return 'Waiting for all players to see their cards…'
     if (cambioDrawn) {
       if (drawnHasPower) return 'Tap one of your cards to swap, or discard to use the power.'
       return 'Tap one of your cards to swap, or discard it.'

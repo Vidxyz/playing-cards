@@ -856,6 +856,11 @@ export class RoomDO implements DurableObject {
       player.isConnected = true
       player.disconnectedAt = undefined
       player.name = name
+      // If reconnecting into a live Cambio game before everyone has dismissed their initial peek,
+      // auto-mark ready — the server won't resend peek results, so they can't block the first player.
+      if (gs.gameType === 'cambio' && gs.phase === 'playing' && !player.isReady) {
+        player.isReady = true
+      }
     }
 
     await this.saveState(gs)
@@ -1241,8 +1246,13 @@ export class RoomDO implements DurableObject {
     await this.saveState(gs)
     await this.broadcastState(gs)
 
-    // Cambio: send initial bottom-2 card peek — client controls the 3s reveal timer
+    // Cambio: reset ready flags then send initial bottom-2 card peek to each player.
+    // The first player cannot draw until everyone has dismissed their peek (client sends 'ready').
     if (gs.gameType === 'cambio') {
+      for (const p of gs.players) p.isReady = false
+      await this.saveState(gs)
+      await this.broadcastState(gs)
+
       const sockets = this.state.getWebSockets()
       for (const ws of sockets) {
         const tags = this.state.getTags(ws)
@@ -2001,6 +2011,7 @@ export class RoomDO implements DurableObject {
   private handleCambioDraw(gs: GameState, player: Player): void {
     if (gs.currentTurnPlayerId !== player.id) return
     if (gs.cambioDrawn) return
+    if (!gs.players.every(p => p.isReady)) return  // wait for all initial peeks to be dismissed
     if (this.drawPile.length === 0) this.reshuffleDiscardIntoDraw(gs)
     if (this.drawPile.length === 0) return
     const card = this.drawPile.shift()!
