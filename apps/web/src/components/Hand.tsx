@@ -241,8 +241,9 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
       setDeclaring(true)
       return
     }
-    // President wilds: all selected are 3s — prompt the player to choose a rank
-    if (gameType === 'president') {
+    // President wilds: all selected are 3s — prompt for rank only during normal play,
+    // not during run-discard or exchange-return (where the rank is irrelevant)
+    if (gameType === 'president' && !playLabel) {
       const allWild = [...selected].every(id => zone.cards.find(c => c.id === id)?.rank === '3')
       if (allWild) {
         setDeclaringWild(true)
@@ -253,7 +254,7 @@ export function Hand({ zone, onPlayCards, targetZones, isMyTurn, gameType, bluff
     const claim = isBluffTarget ? { rank: bluffActiveRank! } : undefined
     onPlayCards?.([...selected], targetZoneId, claim)
     setSelected(new Set())
-  }, [selected, targetZoneId, isBluffTarget, bluffActiveRank, gameType, zone.cards, onPlayCards])
+  }, [selected, targetZoneId, isBluffTarget, bluffActiveRank, gameType, zone.cards, onPlayCards, playLabel])
 
   const handleDeclareAndPlay = useCallback(() => {
     if (!claimRank || selected.size === 0) return
