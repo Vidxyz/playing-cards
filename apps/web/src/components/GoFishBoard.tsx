@@ -3,12 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import type { GameState, ClientEvent, Rank, Card as CardType } from '@playing-cards/shared'
 import { Card } from './Card'
+import { RoundOverActions } from './RoundOverActions'
 
 interface Props {
   gameState: GameState
   myPlayerId: string
   send: (event: ClientEvent) => void
   isHost: boolean
+  onLeave: () => void
 }
 
 const RANK_ORDER: Rank[] = ['2','3','4','5','6','7','8','9','10','J','Q','K','A']
@@ -17,7 +19,7 @@ const RANK_LABEL: Record<string, string> = {
   '8': '8', '9': '9', '10': '10', 'J': 'J', 'Q': 'Q', 'K': 'K', 'A': 'A',
 }
 
-export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
+export function GoFishBoard({ gameState, myPlayerId, send, isHost, onLeave }: Props) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null)
   const [selectedRank, setSelectedRank] = useState<string | null>(null)
   const [newBookFlash, setNewBookFlash] = useState(false)
@@ -302,6 +304,7 @@ export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
           myPlayerId={myPlayerId}
           isHost={isHost}
           send={send}
+          onLeave={onLeave}
           getBookCount={getBookCount}
           getBookRanks={getBookRanks}
         />
@@ -312,11 +315,12 @@ export function GoFishBoard({ gameState, myPlayerId, send, isHost }: Props) {
 
 // ── Round-over screen ────────────────────────────────────────────
 
-function GoFishRoundOver({ gameState, myPlayerId, isHost, send, getBookCount, getBookRanks }: {
+function GoFishRoundOver({ gameState, myPlayerId, isHost, send, onLeave, getBookCount, getBookRanks }: {
   gameState: GameState
   myPlayerId: string
   isHost: boolean
   send: (event: ClientEvent) => void
+  onLeave: () => void
   getBookCount: (pid: string) => number
   getBookRanks: (pid: string) => string[]
 }) {
@@ -396,15 +400,13 @@ function GoFishRoundOver({ gameState, myPlayerId, isHost, send, getBookCount, ge
         )}
       </div>
 
-      {isHost && (
-        <button
-          onClick={() => send({ type: 'next_round' })}
-          className="w-full py-3 rounded-2xl font-black text-sm tracking-widest uppercase transition-all active:scale-95"
-          style={{ background: 'var(--accent)', color: '#000' }}
-        >
-          Play Again
-        </button>
-      )}
+      <RoundOverActions
+        isHost={isHost}
+        onPlayAgain={() => send({ type: 'next_round' })}
+        onHome={() => send({ type: 'end_game' })}
+        onEnd={() => send({ type: 'close_room' })}
+        onLeave={onLeave}
+      />
     </div>
   )
 }

@@ -3,20 +3,23 @@
 import { useState } from 'react'
 import type { GameState } from '@playing-cards/shared'
 import { Card } from './Card'
+import { RoundOverActions } from './RoundOverActions'
 
 interface Props {
   gameState: GameState
   onClose: () => void
-  onNextRound?: () => void
-  onEndGame?: () => void
-  onHome?: () => void
   isHost?: boolean
+  onPlayAgain?: () => void
+  onHome?: () => void
+  onEnd?: () => void
+  onLeave?: () => void
 }
 
-export function ScoreBoard({ gameState, onClose, onNextRound, onEndGame, onHome, isHost }: Props) {
+export function ScoreBoard({ gameState, onClose, isHost, onPlayAgain, onHome, onEnd, onLeave }: Props) {
   const { players, teams, gameType, phase, zones } = gameState
   const showTeams = teams.length > 0
   const isRoundOver = phase === 'round-over'
+  // submitted kept only to prevent duplicate play-again clicks
   const [submitted, setSubmitted] = useState(false)
   const [expanded, setExpanded] = useState(true)
   const [handsExpanded, setHandsExpanded] = useState(true)
@@ -91,47 +94,14 @@ export function ScoreBoard({ gameState, onClose, onNextRound, onEndGame, onHome,
               <PlayerScores players={players} gameType={gameType} />
             )}
 
-            {isRoundOver && (
-              <div className="flex gap-2">
-                {isHost && onNextRound && (
-                  <button
-                    disabled={submitted}
-                    onClick={() => { setSubmitted(true); onNextRound(); onClose() }}
-                    className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-                    style={{
-                      background: submitted ? 'var(--surface-mid)' : 'var(--accent)',
-                      color: submitted ? 'var(--text-dim)' : '#000',
-                      cursor: submitted ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    Play Again
-                  </button>
-                )}
-                {onHome && (
-                  <button
-                    onClick={onHome}
-                    className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-                    style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-                  >
-                    Home
-                  </button>
-                )}
-                {isHost && onEndGame && (
-                  <button
-                    disabled={submitted}
-                    onClick={() => { setSubmitted(true); onEndGame(); onClose() }}
-                    className="px-4 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-                    style={{
-                      background: submitted ? 'var(--surface-mid)' : 'rgba(239,68,68,0.15)',
-                      color: submitted ? 'var(--text-dim)' : '#f87171',
-                      border: '1px solid ' + (submitted ? 'var(--border)' : 'rgba(239,68,68,0.3)'),
-                      cursor: submitted ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    End
-                  </button>
-                )}
-              </div>
+            {isRoundOver && onHome && onEnd && onLeave && (
+              <RoundOverActions
+                isHost={isHost ?? false}
+                onPlayAgain={onPlayAgain && !submitted ? () => { setSubmitted(true); onPlayAgain(); onClose() } : undefined}
+                onHome={onHome}
+                onEnd={onEnd}
+                onLeave={onLeave}
+              />
             )}
           </div>
         )}

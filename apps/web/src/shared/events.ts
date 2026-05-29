@@ -16,6 +16,7 @@ export type ClientEvent =
   | { type: 'next_round' }
   | { type: 'restart_round' }
   | { type: 'end_game' }
+  | { type: 'close_room' }
   | { type: 'kick_player'; playerId: string }
   | { type: 'set_trump'; suit: Suit }
   | { type: 'fold' }

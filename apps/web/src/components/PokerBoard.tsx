@@ -5,6 +5,7 @@ import type { GameState, ClientEvent } from '@playing-cards/shared'
 import { Card } from './Card'
 import { ChipSvg, ChipStack } from './BlackjackBoard'
 import { getPokerBlinds } from '@/lib/poker'
+import { RoundOverActions } from './RoundOverActions'
 
 // Distinct per-seat colors for player identification
 const PLAYER_COLORS = [
@@ -575,23 +576,14 @@ function PokerResults({
         )}
       </div>
 
-      <div className="flex gap-3 pb-2 shrink-0">
-        {isHost && !isGameOver && (
-          <button
-            onClick={() => send({ type: 'next_round' })}
-            className="flex-1 font-bold py-3 rounded-2xl transition-all active:scale-95"
-            style={{ background: 'var(--accent)', color: '#000' }}
-          >
-            Next Hand
-          </button>
-        )}
-        <button
-          onClick={onLeave}
-          className="flex-1 font-bold py-3 rounded-2xl transition-all active:scale-95"
-          style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-        >
-          Leave
-        </button>
+      <div className="pb-2 shrink-0">
+        <RoundOverActions
+          isHost={isHost}
+          onPlayAgain={!isGameOver ? () => send({ type: 'next_round' }) : undefined}
+          onHome={() => send({ type: 'end_game' })}
+          onEnd={() => send({ type: 'close_room' })}
+          onLeave={onLeave}
+        />
       </div>
     </div>
   )

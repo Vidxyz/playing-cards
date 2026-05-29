@@ -670,6 +670,12 @@ export class RoomDO implements DurableObject {
         this.resetToLobby(gs)
         break
 
+      case 'close_room':
+        if (!player.isHost) return
+        await this.broadcast({ type: 'kicked', reason: 'Room closed by host' }, null)
+        await this.state.storage.deleteAll()
+        return
+
       case 'set_trump':
         if (!player.isHost) return
         gs.trumpSuit = event.suit

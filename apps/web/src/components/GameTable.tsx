@@ -487,7 +487,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             myPlayerId={myPlayerId}
             isHost={isHost}
             send={send}
-            onHome={onLeave}
+            onLeave={onLeave}
           />
         ) : gameType === 'poker' ? (
           <div className="self-stretch flex-1 flex w-full">
@@ -523,6 +523,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             isHost={isHost}
             drawPileCount={gameState.drawPileCount}
             send={send}
+            onLeave={onLeave}
           />
         ) : gameType === 'go-fish' ? (
           <GoFishBoard
@@ -530,6 +531,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             myPlayerId={myPlayerId}
             send={send}
             isHost={isHost}
+            onLeave={onLeave}
           />
         ) : gameType === 'rummy' ? (
           <RummyBoard
@@ -537,6 +539,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             myPlayerId={myPlayerId}
             send={send}
             isHost={isHost}
+            onLeave={onLeave}
           />
         ) : gameType === 'crazy-eights' ? (
           <CrazyEightsBoard
@@ -544,6 +547,7 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
             myPlayerId={myPlayerId}
             send={send}
             isHost={isHost}
+            onLeave={onLeave}
           />
         ) : (
           <>
@@ -898,9 +902,10 @@ export function GameTable({ gameState, myPlayerId, send, lastAction, peekResults
           gameState={gameState}
           onClose={() => setShowScores(false)}
           isHost={isHost}
-          onNextRound={() => send({ type: 'next_round' })}
-          onEndGame={() => send({ type: 'end_game' })}
-          onHome={onLeave}
+          onPlayAgain={() => send({ type: 'next_round' })}
+          onHome={() => send({ type: 'end_game' })}
+          onEnd={() => send({ type: 'close_room' })}
+          onLeave={onLeave}
         />
       )}
 

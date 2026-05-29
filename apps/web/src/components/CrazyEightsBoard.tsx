@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { GameState, ClientEvent, Suit } from '@playing-cards/shared'
 import { Card } from './Card'
 import { PlayerStrip } from './PlayerStrip'
+import { RoundOverActions } from './RoundOverActions'
 
 const SUIT_SYMBOL: Record<string, string> = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }
 const SUIT_COLOR: Record<string, string> = {
@@ -18,9 +19,10 @@ interface Props {
   myPlayerId: string
   send: (event: ClientEvent) => void
   isHost: boolean
+  onLeave: () => void
 }
 
-export function CrazyEightsBoard({ gameState, myPlayerId, send, isHost }: Props) {
+export function CrazyEightsBoard({ gameState, myPlayerId, send, isHost, onLeave }: Props) {
   const { phase, players, zones, currentTurnPlayerId, turnOrder, roundNumber } = gameState
   const me = players.find(p => p.id === myPlayerId)
   const isMyTurn = currentTurnPlayerId === myPlayerId
@@ -31,7 +33,7 @@ export function CrazyEightsBoard({ gameState, myPlayerId, send, isHost }: Props)
 
   // Round-over screen
   if (phase === 'round-over') {
-    return <CrazyEightsRoundOver gameState={gameState} myPlayerId={myPlayerId} isHost={isHost} send={send} />
+    return <CrazyEightsRoundOver gameState={gameState} myPlayerId={myPlayerId} isHost={isHost} send={send} onLeave={onLeave} />
   }
 
   // Game-over screen
@@ -228,11 +230,12 @@ export function CrazyEightsBoard({ gameState, myPlayerId, send, isHost }: Props)
 
 // ── Round-over screen ────────────────────────────────────────────
 
-function CrazyEightsRoundOver({ gameState, myPlayerId, isHost, send }: {
+function CrazyEightsRoundOver({ gameState, myPlayerId, isHost, send, onLeave }: {
   gameState: GameState
   myPlayerId: string
   isHost: boolean
   send: (event: ClientEvent) => void
+  onLeave: () => void
 }) {
   const [scoresExpanded, setScoresExpanded] = useState(true)
   const { players, zones, roundNumber } = gameState
@@ -327,15 +330,13 @@ function CrazyEightsRoundOver({ gameState, myPlayerId, isHost, send }: {
           Bust threshold: {gameState.crazy8sMaxScore} pts
         </p>
       )}
-      {isHost && (
-        <button
-          onClick={() => send({ type: 'next_round' })}
-          className="px-8 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-          style={{ background: 'var(--accent)', color: '#000' }}
-        >
-          Next Round
-        </button>
-      )}
+      <RoundOverActions
+        isHost={isHost}
+        onPlayAgain={() => send({ type: 'next_round' })}
+        onHome={() => send({ type: 'end_game' })}
+        onEnd={() => send({ type: 'close_room' })}
+        onLeave={onLeave}
+      />
     </div>
   )
 }

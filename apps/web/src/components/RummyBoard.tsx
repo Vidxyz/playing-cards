@@ -3,15 +3,17 @@
 import { useState } from 'react'
 import type { GameState, ClientEvent } from '@playing-cards/shared'
 import { Card } from './Card'
+import { RoundOverActions } from './RoundOverActions'
 
 interface Props {
   gameState: GameState
   myPlayerId: string
   send: (event: ClientEvent) => void
   isHost: boolean
+  onLeave: () => void
 }
 
-export function RummyBoard({ gameState, myPlayerId, send, isHost }: Props) {
+export function RummyBoard({ gameState, myPlayerId, send, isHost, onLeave }: Props) {
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId
   const hasDrawn = gameState.rummyHasDrawn
   const discardZone = gameState.zones.find(z => z.id === 'discard')
@@ -36,7 +38,7 @@ export function RummyBoard({ gameState, myPlayerId, send, isHost }: Props) {
   }
 
   if (gameState.phase === 'game-over') {
-    return <RummyGameOver gameState={gameState} myPlayerId={myPlayerId} isHost={isHost} send={send} />
+    return <RummyGameOver gameState={gameState} myPlayerId={myPlayerId} isHost={isHost} send={send} onLeave={onLeave} />
   }
 
   return (
@@ -194,7 +196,7 @@ export function RummyBoard({ gameState, myPlayerId, send, isHost }: Props) {
 
       {/* ── Round-over ── */}
       {gameState.phase === 'round-over' && (
-        <RummyRoundOver gameState={gameState} myPlayerId={myPlayerId} isHost={isHost} send={send} />
+        <RummyRoundOver gameState={gameState} myPlayerId={myPlayerId} isHost={isHost} send={send} onLeave={onLeave} />
       )}
     </div>
   )
@@ -202,11 +204,12 @@ export function RummyBoard({ gameState, myPlayerId, send, isHost }: Props) {
 
 // ── Round-over screen ──────────────────────────────────────────
 
-function RummyRoundOver({ gameState, myPlayerId, isHost, send }: {
+function RummyRoundOver({ gameState, myPlayerId, isHost, send, onLeave }: {
   gameState: GameState
   myPlayerId: string
   isHost: boolean
   send: (event: ClientEvent) => void
+  onLeave: () => void
 }) {
   const [scoresExpanded, setScoresExpanded] = useState(true)
 
@@ -329,26 +332,25 @@ function RummyRoundOver({ gameState, myPlayerId, isHost, send }: {
         )}
       </div>
 
-      {isHost && (
-        <button
-          onClick={() => send({ type: 'next_round' })}
-          className="w-full py-3 rounded-2xl font-black text-sm tracking-widest uppercase transition-all active:scale-95"
-          style={{ background: 'var(--accent)', color: '#000' }}
-        >
-          Next Round
-        </button>
-      )}
+      <RoundOverActions
+        isHost={isHost}
+        onPlayAgain={() => send({ type: 'next_round' })}
+        onHome={() => send({ type: 'end_game' })}
+        onEnd={() => send({ type: 'close_room' })}
+        onLeave={onLeave}
+      />
     </div>
   )
 }
 
 // ── Game-over screen ────────────────────────────────────────────
 
-function RummyGameOver({ gameState, myPlayerId, isHost, send }: {
+function RummyGameOver({ gameState, myPlayerId, isHost, send, onLeave }: {
   gameState: GameState
   myPlayerId: string
   isHost: boolean
   send: (event: ClientEvent) => void
+  onLeave: () => void
 }) {
   const active = gameState.players.filter(p => !gameState.rummyBustedPlayerIds.includes(p.id))
   const winner = [...active].sort((a, b) => a.totalScore - b.totalScore)[0]
@@ -395,15 +397,12 @@ function RummyGameOver({ gameState, myPlayerId, isHost, send }: {
         })}
       </div>
 
-      {isHost && (
-        <button
-          onClick={() => send({ type: 'end_game' })}
-          className="w-full py-3 rounded-2xl font-black text-sm tracking-widest uppercase transition-all active:scale-95"
-          style={{ background: 'var(--accent)', color: '#000' }}
-        >
-          Back to Lobby
-        </button>
-      )}
+      <RoundOverActions
+        isHost={isHost}
+        onHome={() => send({ type: 'end_game' })}
+        onEnd={() => send({ type: 'close_room' })}
+        onLeave={onLeave}
+      />
     </div>
   )
 }

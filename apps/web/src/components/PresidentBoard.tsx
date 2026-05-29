@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GameState, ClientEvent } from '@playing-cards/shared'
 import { Card } from './Card'
+import { RoundOverActions } from './RoundOverActions'
 
 const SUIT_SYMBOL: Record<string, string> = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }
 const SUIT_COLOR: Record<string, string> = {
@@ -55,10 +56,10 @@ interface Props {
   myPlayerId: string
   isHost: boolean
   send: (event: ClientEvent) => void
-  onHome: () => void
+  onLeave: () => void
 }
 
-export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: Props) {
+export function PresidentBoard({ gameState, myPlayerId, isHost, send, onLeave }: Props) {
   const [burnFlash, setBurnFlash] = useState(false)
   const [burnInfo, setBurnInfo] = useState<BurnInfo | null>(null)
   const lastBurnTimestampRef = useRef<number | null>(null)
@@ -196,8 +197,10 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
         gameState={gameState}
         myPlayerId={myPlayerId}
         isHost={isHost}
-        onNextRound={() => send({ type: 'next_round' })}
-        onHome={onHome}
+        onPlayAgain={() => send({ type: 'next_round' })}
+        onHome={() => send({ type: 'end_game' })}
+        onEnd={() => send({ type: 'close_room' })}
+        onLeave={onLeave}
       />
     )
   }
@@ -637,13 +640,15 @@ export function PresidentBoard({ gameState, myPlayerId, isHost, send, onHome }: 
 }
 
 function PresidentResults({
-  gameState, myPlayerId, isHost, onNextRound, onHome,
+  gameState, myPlayerId, isHost, onPlayAgain, onHome, onEnd, onLeave,
 }: {
   gameState: GameState
   myPlayerId: string
   isHost: boolean
-  onNextRound: () => void
+  onPlayAgain: () => void
   onHome: () => void
+  onEnd: () => void
+  onLeave: () => void
 }) {
   const [scoresExpanded, setScoresExpanded] = useState(true)
 
@@ -737,24 +742,13 @@ function PresidentResults({
         )}
       </div>
 
-      <div className="flex gap-2">
-        {isHost && (
-          <button
-            onClick={onNextRound}
-            className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-            style={{ background: 'var(--accent)', color: '#000' }}
-          >
-            Play Again
-          </button>
-        )}
-        <button
-          onClick={onHome}
-          className="flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95"
-          style={{ background: 'var(--surface-mid)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-        >
-          Home
-        </button>
-      </div>
+      <RoundOverActions
+        isHost={isHost}
+        onPlayAgain={onPlayAgain}
+        onHome={onHome}
+        onEnd={onEnd}
+        onLeave={onLeave}
+      />
     </div>
   )
 }

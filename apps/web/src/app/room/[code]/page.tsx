@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useRoom } from '@/hooks/useRoom'
 import { Lobby } from '@/components/Lobby'
 import { GameTable } from '@/components/GameTable'
+import { RoundOverActions } from '@/components/RoundOverActions'
 
 interface PlayerSession {
   playerId: string
@@ -140,28 +141,14 @@ function RoomView({ roomCode, session }: { roomCode: string; session: PlayerSess
               </div>
             ))}
           </div>
-          <div className="flex gap-3 w-full max-w-xs">
-            {isHost && (
-              <button
-                disabled={gameOverSubmitted}
-                onClick={() => { setGameOverSubmitted(true); send({ type: 'next_round' }) }}
-                className="flex-1 font-bold py-3 rounded-2xl transition-all active:scale-95"
-                style={{
-                  background: gameOverSubmitted ? 'var(--surface-mid)' : 'var(--accent)',
-                  color: gameOverSubmitted ? 'var(--text-dim)' : '#000',
-                  cursor: gameOverSubmitted ? 'not-allowed' : 'pointer',
-                }}
-              >
-                Play Again
-              </button>
-            )}
-            <button
-              onClick={() => router.replace('/')}
-              className="flex-1 font-bold py-3 rounded-2xl transition-all active:scale-95"
-              style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-            >
-              Home
-            </button>
+          <div className="w-full max-w-xs">
+            <RoundOverActions
+              isHost={!!isHost}
+              onPlayAgain={!gameOverSubmitted ? () => { setGameOverSubmitted(true); send({ type: 'next_round' }) } : undefined}
+              onHome={() => send({ type: 'end_game' })}
+              onEnd={() => send({ type: 'close_room' })}
+              onLeave={() => router.replace('/')}
+            />
           </div>
         </div>
       )

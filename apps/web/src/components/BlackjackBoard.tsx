@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { GameState, ClientEvent, Card as CardType } from '@playing-cards/shared'
 import { Card } from './Card'
+import { RoundOverActions } from './RoundOverActions'
 
 export function bjHandValue(cards: CardType[]): number {
   const visible = cards.filter(c => !c.id.endsWith('__facedown') && !c.id.startsWith('hidden_'))
@@ -67,13 +68,14 @@ export function ChipStack({ count, chipSize = 22 }: { count: number; chipSize?: 
 }
 
 export function BlackjackBoard({
-  gameState, myPlayerId, isHost, drawPileCount, send,
+  gameState, myPlayerId, isHost, drawPileCount, send, onLeave,
 }: {
   gameState: GameState
   myPlayerId: string
   isHost: boolean
   drawPileCount: number
   send: (e: ClientEvent) => void
+  onLeave: () => void
 }) {
   const { currentTurnPlayerId, players, blackjackResults, blackjackChips, blackjackBets, phase } = gameState
   const dealerZone = gameState.zones.find(z => z.id === 'dealer-hand')
@@ -217,15 +219,13 @@ export function BlackjackBoard({
                   )
                 })}
               </div>
-              {isHost && (
-                <button
-                  onClick={() => send({ type: 'next_round' })}
-                  className="w-full py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
-                  style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)' }}
-                >
-                  Next Hand
-                </button>
-              )}
+              <RoundOverActions
+                isHost={isHost}
+                onPlayAgain={() => send({ type: 'next_round' })}
+                onHome={() => send({ type: 'end_game' })}
+                onEnd={() => send({ type: 'close_room' })}
+                onLeave={onLeave}
+              />
             </div>
           )}
         </div>
