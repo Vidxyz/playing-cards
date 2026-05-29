@@ -2831,6 +2831,10 @@ export class RoomDO implements DurableObject {
       const handZone = gs.zones.find(z => z.id === `hand-${p.id}`)
       p.roundScore = (handZone?.cards ?? []).reduce((sum, c) => sum + this.rummyCardScore(c), 0)
     }
+    // Reveal all hands so the round-over screen can show remaining cards
+    for (const zone of gs.zones) {
+      if (zone.id.startsWith('hand-')) zone.visibility = 'face-up'
+    }
     gs.phase = 'round-over'
     await this.saveState(gs)
     await this.broadcastState(gs)

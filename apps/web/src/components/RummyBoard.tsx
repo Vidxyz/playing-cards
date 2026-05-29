@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { GameState, ClientEvent } from '@playing-cards/shared'
 import { Card } from './Card'
 
@@ -207,12 +208,14 @@ function RummyRoundOver({ gameState, myPlayerId, isHost, send }: {
   isHost: boolean
   send: (event: ClientEvent) => void
 }) {
+  const [scoresExpanded, setScoresExpanded] = useState(true)
+
   const sorted = [...gameState.players].sort((a, b) => a.totalScore - b.totalScore)
   const activePlayers = sorted.filter(p => !gameState.rummyBustedPlayerIds.includes(p.id))
   const bustedPlayers = sorted.filter(p => gameState.rummyBustedPlayerIds.includes(p.id))
 
   return (
-    <div className="flex flex-col gap-2 px-4 pb-2 fade-in">
+    <div className="flex flex-col gap-3 px-4 pb-2 fade-in">
       <div className="text-center text-sm font-black tracking-widest uppercase" style={{ color: 'var(--accent)' }}>
         Round Over
       </div>
@@ -220,65 +223,116 @@ function RummyRoundOver({ gameState, myPlayerId, isHost, send }: {
         Bust at {gameState.rummyMaxScore} pts · Lowest total wins
       </div>
 
-      <div className="flex flex-col gap-1 mt-1">
-        {activePlayers.map((p, i) => {
+      {/* Revealed hands for all players */}
+      <div className="flex flex-col gap-3">
+        {gameState.players.map(p => {
+          const handZone = gameState.zones.find(z => z.id === `hand-${p.id}`)
+          const cards = handZone?.cards ?? []
           const isMe = p.id === myPlayerId
-          const justBusted = p.totalScore >= gameState.rummyMaxScore
+          const isBustedP = gameState.rummyBustedPlayerIds.includes(p.id)
           return (
-            <div
-              key={p.id}
-              className="flex items-center justify-between px-3 py-2.5 rounded-xl"
-              style={{
-                background: justBusted ? 'rgba(229,62,62,0.08)' : i === 0 ? 'rgba(74,222,128,0.08)' : 'var(--surface-hi)',
-                border: `1px solid ${justBusted ? 'rgba(229,62,62,0.2)' : i === 0 ? 'rgba(74,222,128,0.2)' : 'var(--border-hi)'}`,
-              }}
-            >
+            <div key={p.id} className="flex flex-col gap-1.5 px-1">
               <div className="flex items-center gap-2">
-                <span className="text-xs" style={{ color: justBusted ? '#fc8181' : i === 0 ? '#4ade80' : 'var(--text-dim)' }}>
-                  {justBusted ? '💥' : i === 0 ? '🥇' : `#${i + 1}`}
-                </span>
-                <span className="text-sm font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
+                <span className="text-xs font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
                   {p.name}{isMe ? ' (you)' : ''}
                 </span>
-              </div>
-              <div className="flex items-center gap-3">
+                {isBustedP && (
+                  <span className="text-[9px] font-black uppercase tracking-wide" style={{ color: '#fc8181' }}>bust</span>
+                )}
+                {p.roundScore === 0 && !isBustedP && (
+                  <span className="text-[9px] font-black uppercase tracking-wide" style={{ color: '#4ade80' }}>went out</span>
+                )}
                 {p.roundScore > 0 && (
-                  <span className="text-xs font-semibold" style={{ color: '#fc8181' }}>+{p.roundScore}</span>
+                  <span className="text-[9px] font-semibold" style={{ color: '#fc8181' }}>+{p.roundScore} pts</span>
                 )}
-                {p.roundScore === 0 && (
-                  <span className="text-xs font-semibold" style={{ color: '#4ade80' }}>Went out!</span>
-                )}
-                <span className="text-sm font-black" style={{ color: justBusted ? '#fc8181' : 'var(--text)' }}>
-                  {p.totalScore} pts
-                </span>
               </div>
-            </div>
-          )
-        })}
-        {bustedPlayers.map(p => {
-          const isMe = p.id === myPlayerId
-          return (
-            <div
-              key={p.id}
-              className="flex items-center justify-between px-3 py-2 rounded-xl opacity-50"
-              style={{ background: 'var(--surface-hi)', border: '1px solid var(--border-hi)' }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-xs" style={{ color: '#fc8181' }}>💀</span>
-                <span className="text-sm font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
-                  {p.name}{isMe ? ' (you)' : ''}
-                </span>
-              </div>
-              <span className="text-xs font-bold uppercase" style={{ color: '#fc8181' }}>Bust · {p.totalScore} pts</span>
+              {cards.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {cards.map(card => (
+                    <Card key={card.id} card={card} size="sm" />
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs italic" style={{ color: 'var(--text-dim)' }}>No cards</span>
+              )}
             </div>
           )
         })}
       </div>
 
+      {/* Collapsible scores panel */}
+      <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-hi)' }}>
+        <button
+          onClick={() => setScoresExpanded(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2.5 transition-colors active:opacity-70"
+          style={{ background: 'var(--surface-hi)' }}
+        >
+          <span className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--text)' }}>Scores</span>
+          <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{scoresExpanded ? '▲ hide' : '▼ show'}</span>
+        </button>
+
+        {scoresExpanded && (
+          <div className="flex flex-col gap-1 px-2 pb-2 pt-1">
+            {activePlayers.map((p, i) => {
+              const isMe = p.id === myPlayerId
+              const justBusted = p.totalScore >= gameState.rummyMaxScore
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between px-3 py-2.5 rounded-xl"
+                  style={{
+                    background: justBusted ? 'rgba(229,62,62,0.08)' : i === 0 ? 'rgba(74,222,128,0.08)' : 'var(--surface-mid)',
+                    border: `1px solid ${justBusted ? 'rgba(229,62,62,0.2)' : i === 0 ? 'rgba(74,222,128,0.2)' : 'var(--border)'}`,
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs" style={{ color: justBusted ? '#fc8181' : i === 0 ? '#4ade80' : 'var(--text-dim)' }}>
+                      {justBusted ? '💥' : i === 0 ? '🥇' : `#${i + 1}`}
+                    </span>
+                    <span className="text-sm font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
+                      {p.name}{isMe ? ' (you)' : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {p.roundScore > 0 && (
+                      <span className="text-xs font-semibold" style={{ color: '#fc8181' }}>+{p.roundScore}</span>
+                    )}
+                    {p.roundScore === 0 && (
+                      <span className="text-xs font-semibold" style={{ color: '#4ade80' }}>Went out!</span>
+                    )}
+                    <span className="text-sm font-black" style={{ color: justBusted ? '#fc8181' : 'var(--text)' }}>
+                      {p.totalScore} pts
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+            {bustedPlayers.map(p => {
+              const isMe = p.id === myPlayerId
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between px-3 py-2 rounded-xl opacity-50"
+                  style={{ background: 'var(--surface-mid)', border: '1px solid var(--border)' }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs" style={{ color: '#fc8181' }}>💀</span>
+                    <span className="text-sm font-bold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
+                      {p.name}{isMe ? ' (you)' : ''}
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold uppercase" style={{ color: '#fc8181' }}>Bust · {p.totalScore} pts</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {isHost && (
         <button
           onClick={() => send({ type: 'next_round' })}
-          className="w-full mt-2 py-3 rounded-2xl font-black text-sm tracking-widest uppercase transition-all active:scale-95"
+          className="w-full py-3 rounded-2xl font-black text-sm tracking-widest uppercase transition-all active:scale-95"
           style={{ background: 'var(--accent)', color: '#000' }}
         >
           Next Round
